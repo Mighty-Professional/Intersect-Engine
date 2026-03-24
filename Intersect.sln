@@ -81,6 +81,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Intersect.Server.Core", "In
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Intersect.SinglePlayer", "Intersect.SinglePlayer\Intersect.SinglePlayer.csproj", "{999025E8-C034-4A91-8166-5C2D95E9C9C3}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Intersect.Client.MonoGame", "Intersect.Client.MonoGame\Intersect.Client.MonoGame.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Intersect.Client.Web", "Intersect.Client.Web\Intersect.Client.Web.csproj", "{B2C3D4E5-F6A7-8901-BCDE-F12345678901}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Single Player", "Single Player", "{F990372C-0580-4D69-89DC-A46A86396BBD}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WinFormsUI", "vendor\dockpanelsuite\WinFormsUI\WinFormsUI.csproj", "{D831728A-6328-4F96-9692-8FE64E0B0AAD}"
@@ -268,6 +272,26 @@ Global
 		{999025E8-C034-4A91-8166-5C2D95E9C9C3}.DebugFull|Any CPU.Build.0 = DebugFull|Any CPU
 		{999025E8-C034-4A91-8166-5C2D95E9C9C3}.DebugPlugins|Any CPU.ActiveCfg = DebugPlugins|Any CPU
 		{999025E8-C034-4A91-8166-5C2D95E9C9C3}.DebugPlugins|Any CPU.Build.0 = DebugPlugins|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.DebugTests|Any CPU.ActiveCfg = DebugTests|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.DebugTests|Any CPU.Build.0 = DebugTests|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.DebugFull|Any CPU.ActiveCfg = DebugFull|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.DebugFull|Any CPU.Build.0 = DebugFull|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.DebugPlugins|Any CPU.ActiveCfg = DebugPlugins|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.DebugPlugins|Any CPU.Build.0 = DebugPlugins|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.DebugTests|Any CPU.ActiveCfg = DebugTests|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.DebugTests|Any CPU.Build.0 = DebugTests|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.DebugFull|Any CPU.ActiveCfg = DebugFull|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.DebugFull|Any CPU.Build.0 = DebugFull|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.DebugPlugins|Any CPU.ActiveCfg = DebugPlugins|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.DebugPlugins|Any CPU.Build.0 = DebugPlugins|Any CPU
 		{5AC53DF1-8152-466D-B7D0-238657F013F7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{5AC53DF1-8152-466D-B7D0-238657F013F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5AC53DF1-8152-466D-B7D0-238657F013F7}.Release|Any CPU.ActiveCfg = Release|Any CPU

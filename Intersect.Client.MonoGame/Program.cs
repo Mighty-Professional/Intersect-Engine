@@ -17,7 +17,7 @@ namespace Intersect.Client.Core;
 /// <summary>
 ///     The main class.
 /// </summary>
-static class Program
+public static class Program
 {
     public static string OpenALLink { get; set; }= string.Empty;
 
@@ -27,7 +27,7 @@ static class Program
     ///     The main entry point for the application.
     /// </summary>
     [STAThread]
-    internal static void Main(Assembly entryAssembly, string[] args)
+    public static void Main(Assembly entryAssembly, string[] args)
     {
         var waitForDebugger = args.Contains("--debugger");
 

@@ -57,8 +57,6 @@ internal partial class IntersectGame : Game
 
     private bool updaterGraphicsReset;
     
-    public static bool _isShowingExitConfirmation;
-
     #endregion
 
     private IClientContext Context { get; }
@@ -355,7 +353,7 @@ internal partial class IntersectGame : Game
                         Globals.Me.CombatTimer > Timing.Global?.Milliseconds &&
                         Globals.GameState == GameStates.InGame;
 
-        if (_isShowingExitConfirmation)
+        if (Globals.IsShowingExitConfirmation)
         {
             return;
         }
@@ -374,12 +372,12 @@ internal partial class IntersectGame : Game
                         Globals.Me.CombatTimer = 0;
                     }
 
-                    _isShowingExitConfirmation = false;
+                    Globals.IsShowingExitConfirmation = false;
                     Globals.IsRunning = false;
                 },
                 handleCancel: (_, _) =>
                 {
-                    _isShowingExitConfirmation = false;
+                    Globals.IsShowingExitConfirmation = false;
                 }
             );
         }
@@ -392,16 +390,16 @@ internal partial class IntersectGame : Game
                 inputType: InputType.YesNo,
                 handleSubmit: (_, _) =>
                 {
-                    _isShowingExitConfirmation = false;
+                    Globals.IsShowingExitConfirmation = false;
                     Globals.IsRunning = false;
                 },
                 handleCancel: (_, _) =>
                 {
-                    _isShowingExitConfirmation = false;
+                    Globals.IsShowingExitConfirmation = false;
                 }
             );
         }
-        _isShowingExitConfirmation = true;
+        Globals.IsShowingExitConfirmation = true;
     }
 
     private void TryExit(object sender, ExitingEventArgs args)

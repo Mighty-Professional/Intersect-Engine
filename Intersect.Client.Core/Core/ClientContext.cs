@@ -93,7 +93,20 @@ internal sealed partial class ClientContext : ApplicationContext<ClientContext, 
     protected override void InternalStart()
     {
         Networking.Network.PacketHandler = new PacketHandler(this, PacketHelper.HandlerRegistry);
-        PlatformRunner = typeof(ClientContext).Assembly.CreateInstanceOf<IPlatformRunner>();
+        PlatformRunner = AppDomain.CurrentDomain.GetAssemblies()
+            .Select(assembly =>
+            {
+                try
+                {
+                    return assembly.CreateInstanceOf<IPlatformRunner>();
+                }
+                catch
+                {
+                    return null;
+                }
+            })
+            .FirstOrDefault(runner => runner != null)
+            ?? throw new InvalidOperationException("No IPlatformRunner implementation found in any loaded assembly.");
         PlatformRunner.Start(this, PostStartup);
     }
 

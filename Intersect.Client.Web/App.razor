@@ -1,0 +1,14 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+
+<div id="game-host"></div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await GameBootstrap.StartAsync(JS);
+        }
+    }
+}

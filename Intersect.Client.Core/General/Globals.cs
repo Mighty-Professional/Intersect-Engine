@@ -35,6 +35,9 @@ public static partial class Globals
     //Game Lock
     public static readonly object GameLock = new();
 
+    //Exit confirmation state (shared between platform runner and UI)
+    public static bool IsShowingExitConfirmation;
+
     //Crucial game variables
 
     internal static readonly List<IClientLifecycleHelper> ClientLifecycleHelpers = [];

@@ -1,5 +1,5 @@
 ﻿using Intersect.Client.Framework.Plugins.Interfaces;
-using Intersect.Client.MonoGame.Network;
+using Intersect.Client.Networking;
 using Intersect.Network;
 using Intersect.Plugins.Interfaces;
 
@@ -10,7 +10,7 @@ namespace Intersect.Client.Plugins.Helpers;
 /// </summary>
 public sealed partial class ClientNetworkHelper : IClientNetworkHelper
 {
-    private static IClient Client => MonoSocket.Instance.Network; // TODO: Single player wrapper
+    private static IClient? Client => Network.Socket.Network as IClient;
 
     public ClientNetworkHelper(IPacketHelper packetHelper)
     {

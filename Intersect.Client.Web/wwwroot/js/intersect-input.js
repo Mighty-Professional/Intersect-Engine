@@ -1,0 +1,155 @@
+// DOM Input Interop for Intersect Engine
+window.IntersectInput = (() => {
+    const keysDown = new Set();
+    const keysPrev = new Set();
+    const mouseButtons = new Set();
+    const mouseButtonsPrev = new Set();
+    let mouseX = 0;
+    let mouseY = 0;
+    let scrollDeltaX = 0;
+    let scrollDeltaY = 0;
+    let textInputBuffer = [];
+    let canvas = null;
+
+    // DOM key code → Intersect Keys enum mapping
+    // This maps standard DOM key codes to the Intersect Keys enum values
+    const keyMap = {
+        'KeyA': 65, 'KeyB': 66, 'KeyC': 67, 'KeyD': 68, 'KeyE': 69,
+        'KeyF': 70, 'KeyG': 71, 'KeyH': 72, 'KeyI': 73, 'KeyJ': 74,
+        'KeyK': 75, 'KeyL': 76, 'KeyM': 77, 'KeyN': 78, 'KeyO': 79,
+        'KeyP': 80, 'KeyQ': 81, 'KeyR': 82, 'KeyS': 83, 'KeyT': 84,
+        'KeyU': 85, 'KeyV': 86, 'KeyW': 87, 'KeyX': 88, 'KeyY': 89,
+        'KeyZ': 90,
+        'Digit0': 48, 'Digit1': 49, 'Digit2': 50, 'Digit3': 51, 'Digit4': 52,
+        'Digit5': 53, 'Digit6': 54, 'Digit7': 55, 'Digit8': 56, 'Digit9': 57,
+        'Numpad0': 96, 'Numpad1': 97, 'Numpad2': 98, 'Numpad3': 99, 'Numpad4': 100,
+        'Numpad5': 101, 'Numpad6': 102, 'Numpad7': 103, 'Numpad8': 104, 'Numpad9': 105,
+        'F1': 112, 'F2': 113, 'F3': 114, 'F4': 115, 'F5': 116, 'F6': 117,
+        'F7': 118, 'F8': 119, 'F9': 120, 'F10': 121, 'F11': 122, 'F12': 123,
+        'ArrowUp': 38, 'ArrowDown': 40, 'ArrowLeft': 37, 'ArrowRight': 39,
+        'Enter': 13, 'NumpadEnter': 13, 'Escape': 27, 'Space': 32,
+        'Tab': 9, 'Backspace': 8, 'Delete': 46,
+        'ShiftLeft': 16, 'ShiftRight': 16,
+        'ControlLeft': 17, 'ControlRight': 17,
+        'AltLeft': 18, 'AltRight': 18,
+        'Home': 36, 'End': 35, 'PageUp': 33, 'PageDown': 34,
+        'Insert': 45,
+        'CapsLock': 20, 'NumLock': 144, 'ScrollLock': 145,
+        'Semicolon': 186, 'Equal': 187, 'Comma': 188, 'Minus': 189,
+        'Period': 190, 'Slash': 191, 'Backquote': 192,
+        'BracketLeft': 219, 'Backslash': 220, 'BracketRight': 221,
+        'Quote': 222,
+        'NumpadMultiply': 106, 'NumpadAdd': 107, 'NumpadSubtract': 109,
+        'NumpadDecimal': 110, 'NumpadDivide': 111,
+    };
+
+    const mouseButtonMap = {
+        0: 0, // Left
+        1: 2, // Middle
+        2: 1, // Right
+        3: 3, // X1
+        4: 4, // X2
+    };
+
+    return {
+        init(canvasId) {
+            canvas = document.getElementById(canvasId);
+            if (!canvas) return false;
+
+            canvas.addEventListener('keydown', (e) => {
+                const key = keyMap[e.code];
+                if (key !== undefined) keysDown.add(key);
+                // Prevent default for game keys (arrows, space, tab, etc.)
+                if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','Tab'].includes(e.code)) {
+                    e.preventDefault();
+                }
+            });
+
+            canvas.addEventListener('keyup', (e) => {
+                const key = keyMap[e.code];
+                if (key !== undefined) keysDown.delete(key);
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                mouseX = e.clientX - rect.left;
+                mouseY = e.clientY - rect.top;
+            });
+
+            canvas.addEventListener('mousedown', (e) => {
+                const btn = mouseButtonMap[e.button];
+                if (btn !== undefined) mouseButtons.add(btn);
+                e.preventDefault();
+                canvas.focus();
+                // Resume audio on user interaction
+                if (window.IntersectAudio) window.IntersectAudio.resume();
+            });
+
+            canvas.addEventListener('mouseup', (e) => {
+                const btn = mouseButtonMap[e.button];
+                if (btn !== undefined) mouseButtons.delete(btn);
+                e.preventDefault();
+            });
+
+            canvas.addEventListener('wheel', (e) => {
+                scrollDeltaX += e.deltaX;
+                scrollDeltaY += e.deltaY;
+                e.preventDefault();
+            }, { passive: false });
+
+            canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+            // Text input via hidden input or direct key events
+            canvas.addEventListener('keypress', (e) => {
+                if (e.key.length === 1) {
+                    textInputBuffer.push(e.key);
+                }
+            });
+
+            // Handle focus/blur
+            canvas.addEventListener('blur', () => {
+                keysDown.clear();
+                mouseButtons.clear();
+            });
+
+            canvas.focus();
+            return true;
+        },
+
+        update() {
+            keysPrev.clear();
+            for (const k of keysDown) keysPrev.add(k);
+            mouseButtonsPrev.clear();
+            for (const b of mouseButtons) mouseButtonsPrev.add(b);
+        },
+
+        isKeyDown(key) { return keysDown.has(key); },
+        wasKeyDown(key) { return keysPrev.has(key); },
+        isMouseButtonDown(button) { return mouseButtons.has(button); },
+        wasMouseButtonDown(button) { return mouseButtonsPrev.has(button); },
+        getMouseX() { return mouseX; },
+        getMouseY() { return mouseY; },
+
+        getScrollDelta() {
+            const dx = scrollDeltaX;
+            const dy = scrollDeltaY;
+            scrollDeltaX = 0;
+            scrollDeltaY = 0;
+            return { x: dx, y: dy };
+        },
+
+        getTextInput() {
+            const buf = textInputBuffer;
+            textInputBuffer = [];
+            return buf;
+        },
+
+        isCanvasFocused() {
+            return document.activeElement === canvas;
+        },
+
+        setCursor(cursorStyle) {
+            if (canvas) canvas.style.cursor = cursorStyle;
+        }
+    };
+})();
