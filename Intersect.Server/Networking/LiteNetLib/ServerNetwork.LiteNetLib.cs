@@ -53,6 +53,18 @@ public class ServerNetwork : AbstractNetwork, IServer
 
     private IServerContext Context { get; }
 
+    /// <summary>
+    /// Adds an additional network layer interface (e.g., WebSocket transport).
+    /// </summary>
+    public void AddTransport(INetworkLayerInterface networkInterface)
+    {
+        networkInterface.OnConnected += HandleInterfaceOnConnected;
+        networkInterface.OnConnectionApproved += HandleInterfaceOnConnectonApproved;
+        networkInterface.OnDisconnected += HandleInterfaceOnDisconnected;
+        networkInterface.OnConnectionRequested += HandleConnectionRequested;
+        AddNetworkLayerInterface(networkInterface);
+    }
+
     public bool Listen()
     {
         StartInterfaces();

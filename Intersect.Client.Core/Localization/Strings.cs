@@ -124,11 +124,11 @@ public static partial class Strings
         }
     }
 
+    public static Action<string, string>? OnLinksLoaded { get; set; }
+
     private static void PostLoad()
     {
-
-        Core.Program.OpenGLLink = Errors.OpenGlLink.ToString();
-        Core.Program.OpenALLink = Errors.OpenAllLink.ToString();
+        OnLinksLoaded?.Invoke(Errors.OpenGlLink.ToString(), Errors.OpenAllLink.ToString());
     }
 
     private class OrdinalComparer : IComparer<string>

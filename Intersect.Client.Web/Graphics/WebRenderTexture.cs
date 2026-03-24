@@ -46,7 +46,7 @@ public class WebRenderTexture : IGameRenderTexture
     public bool IsLoaded => _textureId > 0;
 
     public Color this[int x, int y] => Color.Transparent;
-    public Color this[System.Drawing.Point point] => Color.Transparent;
+    public Color this[Intersect.Point point] => Color.Transparent;
 
     public event Action<IAsset>? Disposed;
     public event Action<IAsset>? Loaded;

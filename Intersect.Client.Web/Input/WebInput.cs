@@ -16,11 +16,10 @@ public class WebInput : GameInput
     private IControlSet _controlSet;
     private Vector2 _cachedMousePos;
 
-    public WebInput(IJSInProcessRuntime js)
+    public WebInput(IJSInProcessRuntime js) : base(forceGlobal: true)
     {
         _js = js;
         _controlSet = new WebControlSet();
-        Current = this;
     }
 
     public override IControlSet ControlSet
@@ -48,7 +47,7 @@ public class WebInput : GameInput
         return _cachedMousePos;
     }
 
-    public override Vector2 MousePosition => _cachedMousePos;
+    public new Vector2 MousePosition => _cachedMousePos;
 
     public override void Update(TimeSpan elapsed)
     {
@@ -66,7 +65,13 @@ public class WebInput : GameInput
                 if (ch.Length > 0)
                 {
                     Interface.Interface.GwenInput?.ProcessMessage(
-                        new IntersectInput.InputEvent { Type = 4 /* TextEntered */, Character = ch[0] });
+                        new GwenInputMessage(
+                            IntersectInput.InputEvent.TextEntered,
+                            _cachedMousePos,
+                            MouseButton.None,
+                            Keys.None,
+                            unicode: ch
+                        ));
                 }
             }
         }
@@ -75,12 +80,14 @@ public class WebInput : GameInput
         var scroll = _js.Invoke<ScrollDelta>("IntersectInput.getScrollDelta");
         if (Math.Abs(scroll.Y) > 0.01f)
         {
+            var scrollAmount = scroll.Y > 0 ? -1 : 1;
             Interface.Interface.GwenInput?.ProcessMessage(
-                new IntersectInput.InputEvent
-                {
-                    Type = 5 /* MouseWheelScrolled */,
-                    Delta = scroll.Y > 0 ? -1 : 1
-                });
+                new GwenInputMessage(
+                    IntersectInput.InputEvent.MouseScroll,
+                    new Vector2(scrollAmount, scrollAmount),
+                    MouseButton.None,
+                    Keys.None
+                ));
         }
     }
 

@@ -85,11 +85,11 @@ public class WebTileBuffer : GameTileBuffer
     {
         if (_vertices.Count == 0) return false;
 
-        // Create GPU buffers
+        // Create GPU buffers (use uint indices for 16K+ tile support)
         _vertexBuffer = new WebVertexBuffer(_js, _vertices.Count / 8, typeof(float), true);
-        _indexBuffer = new WebIndexBuffer(_js, _indices.Count, typeof(ushort), true);
+        _indexBuffer = new WebIndexBuffer(_js, _indices.Count, typeof(uint), true);
 
-        // Upload data
+        // Upload data to GPU
         _vertexBuffer.SetVertexData(_vertices.ToArray());
         _indexBuffer.SetIndexData(_indices.ToArray());
 

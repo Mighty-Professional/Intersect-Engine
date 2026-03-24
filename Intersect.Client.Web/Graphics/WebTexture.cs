@@ -75,7 +75,7 @@ public class WebTexture : IGameTexture
     public bool IsLoaded => _loaded;
 
     public Color this[int x, int y] => GetPixel(x, y);
-    public Color this[System.Drawing.Point point] => GetPixel(point.X, point.Y);
+    public Color this[Intersect.Point point] => GetPixel(point.X, point.Y);
 
     public event Action<IAsset>? Disposed;
     public event Action<IAsset>? Loaded;

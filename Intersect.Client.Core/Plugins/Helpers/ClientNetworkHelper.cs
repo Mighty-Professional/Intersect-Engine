@@ -10,7 +10,7 @@ namespace Intersect.Client.Plugins.Helpers;
 /// </summary>
 public sealed partial class ClientNetworkHelper : IClientNetworkHelper
 {
-    private static IClient? Client => Network.Socket.Network as IClient;
+    private static IClient? Client => Intersect.Client.Networking.Network.Socket.Network as IClient;
 
     public ClientNetworkHelper(IPacketHelper packetHelper)
     {

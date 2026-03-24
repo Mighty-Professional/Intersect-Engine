@@ -34,6 +34,7 @@ using Newtonsoft.Json.Converters;
 using Intersect.Server.Collections.Indexing;
 using Intersect.Server.Web.Controllers;
 using Intersect.Server.Web.Controllers.Api;
+using Intersect.Server.Networking.WebSocket;
 using Intersect.Server.Web.Controllers.AssetManagement;
 using Intersect.Server.Web.Extensions;
 using Intersect.Server.Web.Types.Chat;
@@ -97,6 +98,9 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
         builder.Services.Configure<ResponseCompressionOptions>(responseCompressionSection);
 
         builder.Services.AddResponseCompression();
+
+        // Register WebSocket network interface for game client connections
+        builder.Services.AddSingleton<WebSocketNetworkInterface>();
 
         builder.Services.AddSingleton(ApplicationContext.CurrentContext);
 
@@ -656,6 +660,31 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
             );
         }
 
+        // WebSocket support for web browser game clients
+        app.UseWebSockets(new WebSocketOptions
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(30),
+        });
+        app.UseMiddleware<WebSocketMiddleware>();
+
+        // Serve game client resources (textures, audio, fonts) at /resources
+        var resourcesPath = Path.Combine(builder.Environment.ContentRootPath, "resources");
+        if (Directory.Exists(resourcesPath))
+        {
+            app.UseStaticFiles(
+                new StaticFileOptions
+                {
+                    FileProvider = new PhysicalFileProvider(
+                        resourcesPath,
+                        ExclusionFilters.Sensitive
+                    ),
+                    HttpsCompression = HttpsCompressionMode.Compress,
+                    RequestPath = "/resources",
+                    ServeUnknownFileTypes = true,
+                }
+            );
+        }
+
         app.UseAuthorization();
 
         app.MapHtmxAntiforgeryScript();
@@ -716,6 +745,16 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
             }
 
             _app = app;
+
+            // Attach WebSocket transport to the game server network
+            var wsInterface = app.Services.GetService<WebSocketNetworkInterface>();
+            var serverContext = ApplicationContext.GetCurrentContext<ServerContext>();
+            if (wsInterface != null && serverContext?.Network is Networking.LiteNetLib.ServerNetwork serverNetwork)
+            {
+                wsInterface.AttachToNetwork(serverNetwork);
+                wsInterface.Start();
+            }
+
             await app.StartAsync(cancellationToken);
         }
         catch (Exception exception)

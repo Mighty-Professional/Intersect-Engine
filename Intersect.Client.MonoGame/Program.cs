@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Resources;
+using Intersect.Client.Localization;
 using Intersect.Client.ThirdParty;
 using Intersect.Configuration;
 using Intersect.Core;
@@ -38,6 +39,12 @@ public static class Program
         }
 
         CultureInfo.DefaultThreadCurrentCulture = new CultureInfo("en-US");
+
+        Strings.OnLinksLoaded = (openGlLink, openAlLink) =>
+        {
+            OpenGLLink = openGlLink;
+            OpenALLink = openAlLink;
+        };
 
         ExportDependencies();
         Assembly.LoadFile(Path.Combine(Environment.CurrentDirectory, "MonoGame.Framework.Client.dll"));

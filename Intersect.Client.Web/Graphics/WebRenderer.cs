@@ -120,8 +120,8 @@ public partial class WebRenderer : GameRenderer
 
         if (tex.AtlasReference != null)
         {
-            sx += tex.AtlasReference.X;
-            sy += tex.AtlasReference.Y;
+            sx += tex.AtlasReference.Bounds.X;
+            sy += tex.AtlasReference.Bounds.Y;
         }
 
         _js.InvokeVoid("IntersectWebGL.drawTexture",
@@ -218,13 +218,22 @@ public partial class WebRenderer : GameRenderer
 
     public override void DrawBuffer(IVertexBuffer vertexBuffer, IIndexBuffer? indexBuffer = null)
     {
-        // Custom buffer drawing - used for advanced rendering
         if (vertexBuffer is not WebVertexBuffer wvb) return;
         var wib = indexBuffer as WebIndexBuffer;
 
+        // Get texture ID from the active shader's texture
+        var textureId = 0;
+        if (ActiveShader?.Texture is WebTexture webTex)
+            textureId = webTex.PlatformTextureId;
+
+        // Determine index type: 0 = ushort, 1 = uint
+        var indexType = 0;
+        if (wib?.IndexType == typeof(uint) || wib?.IndexType == typeof(int))
+            indexType = 1;
+
         _js.InvokeVoid("IntersectWebGL.drawBuffers",
-            wvb.PlatformBufferId, wib?.PlatformBufferId ?? 0, 0,
-            wib?.Count ?? 0, 0);
+            wvb.PlatformBufferId, wib?.PlatformBufferId ?? 0, textureId,
+            wib?.Count ?? 0, 0, indexType);
     }
 
     public override void Close()

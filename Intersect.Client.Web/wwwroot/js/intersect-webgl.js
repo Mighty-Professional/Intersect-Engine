@@ -599,7 +599,23 @@ window.IntersectWebGL = (() => {
             const b = gpuBuffers.get(bufferId);
             if (b) {
                 gl.bindBuffer(b.target, b.buffer);
-                gl.bufferSubData(b.target, offset, data);
+                gl.bufferSubData(b.target, offset, new Float32Array(data));
+            }
+        },
+
+        setBufferDataUint16(bufferId, data, offset) {
+            const b = gpuBuffers.get(bufferId);
+            if (b) {
+                gl.bindBuffer(b.target, b.buffer);
+                gl.bufferSubData(b.target, offset, new Uint16Array(data));
+            }
+        },
+
+        setBufferDataUint32(bufferId, data, offset) {
+            const b = gpuBuffers.get(bufferId);
+            if (b) {
+                gl.bindBuffer(b.target, b.buffer);
+                gl.bufferSubData(b.target, offset, new Uint32Array(data));
             }
         },
 
@@ -612,7 +628,8 @@ window.IntersectWebGL = (() => {
         },
 
         // Draw with custom vertex/index buffers
-        drawBuffers(vertexBufferId, indexBufferId, textureId, indexCount, primitiveType) {
+        // indexType: 0 = UNSIGNED_SHORT (default), 1 = UNSIGNED_INT
+        drawBuffers(vertexBufferId, indexBufferId, textureId, indexCount, primitiveType, indexType) {
             flushBatch();
             const vb = gpuBuffers.get(vertexBufferId);
             const ib = gpuBuffers.get(indexBufferId);
@@ -641,7 +658,8 @@ window.IntersectWebGL = (() => {
             else if (primitiveType === 3) glPrimitive = gl.LINES;
             else if (primitiveType === 4) glPrimitive = gl.LINE_STRIP;
 
-            gl.drawElements(glPrimitive, indexCount, gl.UNSIGNED_SHORT, 0);
+            const glIndexType = indexType === 1 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+            gl.drawElements(glPrimitive, indexCount, glIndexType, 0);
         },
 
         // Screenshot
@@ -654,6 +672,25 @@ window.IntersectWebGL = (() => {
 
         getCanvasSize() {
             return { width: canvas?.clientWidth || 800, height: canvas?.clientHeight || 600 };
+        },
+
+        // Load a web font via CSS FontFace API
+        async loadFont(fontName, url) {
+            try {
+                const font = new FontFace(fontName, `url(${url})`);
+                await font.load();
+                document.fonts.add(font);
+                console.log(`Font loaded: ${fontName} from ${url}`);
+                return true;
+            } catch (err) {
+                console.warn(`Failed to load font '${fontName}' from ${url}:`, err);
+                return false;
+            }
+        },
+
+        // Check if a font is available
+        isFontLoaded(fontName) {
+            return document.fonts.check(`12px "${fontName}"`);
         }
     };
 })();
