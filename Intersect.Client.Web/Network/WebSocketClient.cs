@@ -37,7 +37,8 @@ public class WebSocketClient : GameSocket
         _connecting = true;
 
         // Determine WebSocket URL (use wss:// if page is served over https://)
-        var protocol = "ws";
+        var isSecure = _js.Invoke<bool>("eval", "location.protocol === 'https:'");
+        var protocol = isSecure ? "wss" : "ws";
         var wsUrl = $"{protocol}://{host}:{port}/ws";
         Console.WriteLine($"WebSocket connecting to: {wsUrl}");
 

@@ -105,18 +105,27 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
         builder.Services.AddSingleton(ApplicationContext.CurrentContext);
 
         var corsPolicies = builder.Configuration.GetValue<Dictionary<string, CorsPolicy>>("Cors");
-        if (corsPolicies != default)
-        {
-            builder.Services.AddCors(
-                options =>
+        builder.Services.AddCors(
+            options =>
+            {
+                if (corsPolicies != default)
                 {
                     foreach (var (name, policy) in corsPolicies)
                     {
                         options.AddPolicy(name, policy);
                     }
                 }
-            );
-        }
+
+                // Default policy for web game client — allows any origin to access
+                // resources and WebSocket endpoints needed by the browser client
+                options.AddDefaultPolicy(
+                    policy => policy
+                        .AllowAnyOrigin()
+                        .AllowAnyMethod()
+                        .AllowAnyHeader()
+                );
+            }
+        );
 
         builder.Services.AddRouting(
             routeOptions =>
@@ -591,6 +600,8 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
 
         app.UseRouting();
 
+        app.UseCors();
+
         app.UseAuthentication();
 
         app.UseRequestLocalization(
@@ -661,10 +672,13 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
         }
 
         // WebSocket support for web browser game clients
-        app.UseWebSockets(new WebSocketOptions
+        var webSocketOptions = new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30),
-        });
+        };
+        // Allow any origin for web game client connections
+        webSocketOptions.AllowedOrigins.Clear();
+        app.UseWebSockets(webSocketOptions);
         app.UseMiddleware<WebSocketMiddleware>();
 
         // Serve game client resources (textures, audio, fonts) at /resources
