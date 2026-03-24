@@ -26,7 +26,14 @@ public static partial class Console
     static Console()
     {
         //Instance = new Console();
-        SystemConsole.CancelKeyPress += (sender, args) => CancelKeyPress?.Invoke(sender, args);
+        if (OperatingSystem.IsBrowser())
+        {
+            // CancelKeyPress is not supported in browser WASM environments
+        }
+        else
+        {
+            SystemConsole.CancelKeyPress += (sender, args) => CancelKeyPress?.Invoke(sender, args);
+        }
 
         mDefaultError = Error;
         mDefaultOut = Out;

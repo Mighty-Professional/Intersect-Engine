@@ -351,8 +351,11 @@ public abstract partial class ApplicationContext<TContext, TStartupOptions> : IA
     /// </summary>
     public static void AttachHandlers()
     {
-        AppDomain.CurrentDomain.AssemblyResolve += HandleAssemblyResolve;
-        AppDomain.CurrentDomain.UnhandledException += HandleUnhandledException;
+        if (!OperatingSystem.IsBrowser())
+        {
+            AppDomain.CurrentDomain.AssemblyResolve += HandleAssemblyResolve;
+            AppDomain.CurrentDomain.UnhandledException += HandleUnhandledException;
+        }
         TaskScheduler.UnobservedTaskException += HandleUnobservedTaskException;
     }
 
@@ -361,8 +364,11 @@ public abstract partial class ApplicationContext<TContext, TStartupOptions> : IA
     /// </summary>
     public static void DetachHandlers()
     {
-        AppDomain.CurrentDomain.AssemblyResolve -= HandleAssemblyResolve;
-        AppDomain.CurrentDomain.UnhandledException -= HandleUnhandledException;
+        if (!OperatingSystem.IsBrowser())
+        {
+            AppDomain.CurrentDomain.AssemblyResolve -= HandleAssemblyResolve;
+            AppDomain.CurrentDomain.UnhandledException -= HandleUnhandledException;
+        }
         TaskScheduler.UnobservedTaskException -= HandleUnobservedTaskException;
     }
 

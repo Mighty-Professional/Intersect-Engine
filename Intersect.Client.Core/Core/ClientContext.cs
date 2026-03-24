@@ -38,7 +38,12 @@ internal sealed partial class ClientContext : ApplicationContext<ClientContext, 
         PermissionSet.PermissionSetUpdated += PermissionSetOnPermissionSetUpdated;
 
         var hostNameOrAddress = clientConfiguration.Host;
-        try
+        if (OperatingSystem.IsBrowser())
+        {
+            // DNS resolution is not available in browser WASM
+            IsDeveloper = false;
+        }
+        else try
         {
             var address = Dns.GetHostAddresses(hostNameOrAddress).FirstOrDefault();
             IsDeveloper = !(address?.IsPublic() ?? true);
@@ -93,7 +98,14 @@ internal sealed partial class ClientContext : ApplicationContext<ClientContext, 
     protected override void InternalStart()
     {
         Networking.Network.PacketHandler = new PacketHandler(this, PacketHelper.HandlerRegistry);
-        PlatformRunner = AppDomain.CurrentDomain.GetAssemblies()
+
+        // In browser WASM, AppDomain.GetAssemblies() is not available;
+        // search only the entry assembly which contains WebPlatformRunner
+        var assembliesToSearch = OperatingSystem.IsBrowser()
+            ? new[] { Assembly.GetEntryAssembly()! }
+            : AppDomain.CurrentDomain.GetAssemblies();
+
+        PlatformRunner = assembliesToSearch
             .Select(assembly =>
             {
                 try
@@ -118,7 +130,7 @@ internal sealed partial class ClientContext : ApplicationContext<ClientContext, 
         bool wait = false
     )
     {
-        var sender = Thread.CurrentThread;
+        object sender = OperatingSystem.IsBrowser() ? (object)"browser-main" : Thread.CurrentThread;
         var task = Task.Factory.StartNew(
             () => HandleUnhandledException(sender, new UnhandledExceptionEventArgs(exception, isTerminating))
         );

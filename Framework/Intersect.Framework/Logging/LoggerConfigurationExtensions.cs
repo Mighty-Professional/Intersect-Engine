@@ -19,12 +19,6 @@ public static class LoggerConfigurationExtensions
         LoggingLevelSwitch? parentLoggingLevelSwitch = null
     )
     {
-        var currentProcess = Process.GetCurrentProcess();
-        var processStartTime = currentProcess.StartTime;
-        var executableName = Path.GetFileNameWithoutExtension(
-            currentProcess.MainModule?.FileName ?? forAssembly.GetName().Name
-        );
-
         LoggingLevelSwitch loggingLevelSwitch =
             new(Debugger.IsAttached ? LogEventLevel.Debug : LogEventLevel.Information);
 
@@ -38,25 +32,38 @@ public static class LoggerConfigurationExtensions
 
         LoggingLevelSwitch errorLevelSwitch = new();
 
-        var serilogLogger = loggerConfiguration
+        var config = loggerConfiguration
             .MinimumLevel.ControlledBy(loggingLevelSwitch)
             .Enrich.FromLogContext()
-            .WriteTo.Console()
-            .WriteTo.File(
-                Path.Combine(
-                    "logs",
-                    $"{executableName}-{processStartTime:yyyy_MM_dd-HH_mm_ss_fff}.log"
-                ),
-                rollOnFileSizeLimit: true,
-                retainedFileTimeLimit: TimeSpan.FromDays(30)
-            )
-            .WriteTo.File(
-                Path.Combine("logs", $"errors-{executableName}.log"),
-                levelSwitch: errorLevelSwitch,
-                rollOnFileSizeLimit: true,
-                retainedFileTimeLimit: TimeSpan.FromDays(30)
-            )
-            .CreateLogger();
+            .WriteTo.Console();
+
+        // File logging and Process APIs are not available in browser WASM
+        if (!OperatingSystem.IsBrowser())
+        {
+            var currentProcess = Process.GetCurrentProcess();
+            var processStartTime = currentProcess.StartTime;
+            var executableName = Path.GetFileNameWithoutExtension(
+                currentProcess.MainModule?.FileName ?? forAssembly.GetName().Name
+            );
+
+            config = config
+                .WriteTo.File(
+                    Path.Combine(
+                        "logs",
+                        $"{executableName}-{processStartTime:yyyy_MM_dd-HH_mm_ss_fff}.log"
+                    ),
+                    rollOnFileSizeLimit: true,
+                    retainedFileTimeLimit: TimeSpan.FromDays(30)
+                )
+                .WriteTo.File(
+                    Path.Combine("logs", $"errors-{executableName}.log"),
+                    levelSwitch: errorLevelSwitch,
+                    rollOnFileSizeLimit: true,
+                    retainedFileTimeLimit: TimeSpan.FromDays(30)
+                );
+        }
+
+        var serilogLogger = config.CreateLogger();
 
         var loggerFactory = new SerilogLoggerFactory(serilogLogger, dispose: true);
         var logger = loggerFactory.CreateLogger(categoryName);
