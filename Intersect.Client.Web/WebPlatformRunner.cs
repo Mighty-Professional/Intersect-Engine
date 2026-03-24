@@ -12,42 +12,42 @@ using Intersect.Client.Web.Database;
 using Intersect.Client.Web.Graphics;
 using Intersect.Client.Web.Input;
 using Intersect.Client.Web.Network;
-using Intersect.Utilities;
 using Microsoft.JSInterop;
 
 namespace Intersect.Client.Web;
 
 /// <summary>
 /// Web platform runner implementing IPlatformRunner for Blazor WASM.
-/// Uses requestAnimationFrame for the game loop instead of a blocking Game.Run().
+/// Uses an async frame loop instead of a blocking Game.Run().
 /// </summary>
 public class WebPlatformRunner : IPlatformRunner
 {
     internal static WebPlatformRunner? Instance { get; set; }
+    internal static IJSInProcessRuntime? JsRuntime { get; set; }
 
-    private readonly IJSRuntime _js;
     private IClientContext? _context;
-    private Action? _postStartupAction;
     private bool _initialized;
     private DateTime _lastFrameTime;
 
-    public WebPlatformRunner(IJSRuntime jsRuntime)
-    {
-        _js = jsRuntime;
-    }
+    /// <summary>
+    /// Parameterless constructor for assembly scanning by ClientContext.
+    /// </summary>
+    public WebPlatformRunner() { }
 
     /// <inheritdoc />
     public void Start(IClientContext context, Action postStartupAction)
     {
+        var js = JsRuntime ?? throw new InvalidOperationException(
+            "JsRuntime must be set before Start is called");
+
         _context = context;
-        _postStartupAction = postStartupAction;
 
         // Initialize all subsystems
-        var renderer = new WebRenderer(_js);
-        var input = new WebInput(_js);
-        var clipboard = new WebClipboard(_js);
-        var contentManager = new WebContentManager(_js);
-        var database = new WebDatabase(_js);
+        var renderer = new WebRenderer(js);
+        var input = new WebInput(js);
+        var clipboard = new WebClipboard(js);
+        var contentManager = new WebContentManager(js);
+        var database = new WebDatabase(js);
 
         // Wire up globals
         Globals.InputManager = input;
@@ -56,24 +56,27 @@ public class WebPlatformRunner : IPlatformRunner
         Globals.Database = database;
         Core.Graphics.Renderer = renderer;
 
+        // Initialize renderer
+        renderer.Init();
+
         // Set up GWEN UI
         Interface.Interface.GwenRenderer = new IntersectRenderer(null, Core.Graphics.Renderer);
         Interface.Interface.GwenInput = new IntersectInput();
 
         // Set up networking
-        Networking.Network.Socket = new WebSocketClient(_js, context);
+        Networking.Network.Socket = new WebSocketClient(js, context);
 
         // Initialize game
         Main.Start(context);
-        _postStartupAction?.Invoke();
+        postStartupAction();
         _initialized = true;
         _lastFrameTime = DateTime.UtcNow;
 
-        // Start the frame loop - in web, this is non-blocking via requestAnimationFrame
-        _ = RunFrameLoopAsync();
+        // Start the frame loop (non-blocking in WASM single-threaded environment)
+        _ = RunFrameLoopAsync(js);
     }
 
-    private async Task RunFrameLoopAsync()
+    private async Task RunFrameLoopAsync(IJSInProcessRuntime js)
     {
         while (_initialized && Globals.IsRunning)
         {
@@ -83,27 +86,22 @@ public class WebPlatformRunner : IPlatformRunner
 
             try
             {
-                // Update input state
-                await _js.InvokeVoidAsync("IntersectInput.update");
+                // Update input state (synchronous in WASM)
+                js.InvokeVoid("IntersectInput.update");
 
-                // Update game logic
-                lock (Globals.GameLock)
-                {
-                    Main.Update(elapsed);
-                }
+                // Update game logic (no lock needed - WASM is single-threaded)
+                Main.Update(elapsed);
 
                 // Render
-                await _js.InvokeVoidAsync("IntersectWebGL.beginFrame");
                 Core.Graphics.Render(elapsed, TimeSpan.Zero);
-                await _js.InvokeVoidAsync("IntersectWebGL.endFrame");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Frame error: {ex.Message}");
+                Console.Error.WriteLine($"Frame error: {ex}");
             }
 
-            // Yield to browser - ~16ms for 60fps
-            await Task.Delay(16);
+            // Yield to browser via Task.Delay - gives browser time to paint
+            await Task.Delay(1);
         }
     }
 }

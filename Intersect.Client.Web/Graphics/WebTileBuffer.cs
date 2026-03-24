@@ -13,7 +13,7 @@ public class WebTileBuffer : GameTileBuffer
     private WebIndexBuffer? _indexBuffer;
     private IGameTexture? _texture;
     private readonly List<float> _vertices = new();
-    private readonly List<ushort> _indices = new();
+    private readonly List<uint> _indices = new();
     private int _tileCount;
 
     public WebTileBuffer(IJSRuntime js)
@@ -43,7 +43,7 @@ public class WebTileBuffer : GameTileBuffer
         var u1 = (srcX + srcW) / tw;
         var v1 = (srcY + srcH) / th;
 
-        var vi = (ushort)(_tileCount * 4);
+        var vi = (uint)(_tileCount * 4);
 
         // Vertices: x, y, u, v, r, g, b, a
         AddVertex(x, y, u0, v0);
@@ -51,13 +51,13 @@ public class WebTileBuffer : GameTileBuffer
         AddVertex(x + srcW, y + srcH, u1, v1);
         AddVertex(x, y + srcH, u0, v1);
 
-        // Indices
+        // Indices (using uint to avoid ushort overflow at 16K+ tiles)
         _indices.Add(vi);
-        _indices.Add((ushort)(vi + 1));
-        _indices.Add((ushort)(vi + 2));
+        _indices.Add(vi + 1);
+        _indices.Add(vi + 2);
         _indices.Add(vi);
-        _indices.Add((ushort)(vi + 2));
-        _indices.Add((ushort)(vi + 3));
+        _indices.Add(vi + 2);
+        _indices.Add(vi + 3);
 
         _tileCount++;
         return true;

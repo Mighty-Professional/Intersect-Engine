@@ -12,21 +12,20 @@ namespace Intersect.Client.Web.Graphics;
 /// </summary>
 public class WebRenderTexture : IGameRenderTexture
 {
-    private readonly IJSRuntime _js;
+    private readonly IJSInProcessRuntime _js;
     private int _framebufferId;
     private int _textureId;
     private readonly int _width;
     private readonly int _height;
     private bool _disposed;
 
-    public WebRenderTexture(IJSRuntime js, int width, int height)
+    public WebRenderTexture(IJSInProcessRuntime js, int width, int height)
     {
         _js = js;
         _width = width;
         _height = height;
 
-        var result = ((IJSInProcessRuntime)js).Invoke<FbCreateResult>(
-            "IntersectWebGL.createFramebuffer", width, height);
+        var result = js.Invoke<FbCreateResult>("IntersectWebGL.createFramebuffer", width, height);
         _framebufferId = result.FbId;
         _textureId = result.TextureId;
     }
@@ -49,42 +48,48 @@ public class WebRenderTexture : IGameRenderTexture
     public Color this[int x, int y] => Color.Transparent;
     public Color this[System.Drawing.Point point] => Color.Transparent;
 
-    public event Action? Disposed;
-    public event Action? Loaded;
-    public event Action? Unloaded;
+    public event Action<IAsset>? Disposed;
+    public event Action<IAsset>? Loaded;
+    public event Action<IAsset>? Unloaded;
+
+    public int CompareTo(IGameTexture? other)
+    {
+        if (other == null) return 1;
+        return string.Compare(Name, other.ToString(), StringComparison.Ordinal);
+    }
 
     public bool Begin()
     {
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.bindFramebuffer", _framebufferId);
+        _js.InvokeVoid("IntersectWebGL.bindFramebuffer", _framebufferId);
         return true;
     }
 
     public void Clear(Color color)
     {
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.clear",
+        _js.InvokeVoid("IntersectWebGL.clear",
             color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
     }
 
     public void End()
     {
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.bindFramebuffer", 0);
+        _js.InvokeVoid("IntersectWebGL.bindFramebuffer", 0);
     }
 
     public bool Unload()
     {
         if (_framebufferId > 0)
         {
-            ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.deleteFramebuffer", _framebufferId);
+            _js.InvokeVoid("IntersectWebGL.deleteFramebuffer", _framebufferId);
             _framebufferId = 0;
             _textureId = 0;
         }
+        Unloaded?.Invoke(this);
         return true;
     }
 
     public object? GetTexture() => _textureId;
     public TPlatformTexture? GetTexture<TPlatformTexture>() where TPlatformTexture : class
         => _textureId as object as TPlatformTexture;
-
     public void Reload() { }
     public Color GetPixel(int x, int y) => Color.Transparent;
 
@@ -93,7 +98,7 @@ public class WebRenderTexture : IGameRenderTexture
         if (_disposed) return;
         _disposed = true;
         Unload();
-        Disposed?.Invoke();
+        Disposed?.Invoke(this);
     }
 
     private record FbCreateResult(int FbId, int TextureId);

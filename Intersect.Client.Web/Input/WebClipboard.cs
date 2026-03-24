@@ -8,10 +8,10 @@ namespace Intersect.Client.Web.Input;
 /// </summary>
 public class WebClipboard : GameClipboard
 {
-    private readonly IJSRuntime _js;
+    private readonly IJSInProcessRuntime _js;
     private string _text = string.Empty;
 
-    public WebClipboard(IJSRuntime js)
+    public WebClipboard(IJSInProcessRuntime js)
     {
         _js = js;
     }
@@ -23,11 +23,8 @@ public class WebClipboard : GameClipboard
     public override void SetText(string data)
     {
         _text = data;
-        _ = _js.InvokeVoidAsync("navigator.clipboard.writeText", data);
+        _ = ((IJSRuntime)_js).InvokeVoidAsync("navigator.clipboard.writeText", data);
     }
 
-    public override string GetText()
-    {
-        return _text;
-    }
+    public override string GetText() => _text;
 }

@@ -10,40 +10,36 @@ namespace Intersect.Client.Web.Audio;
 /// </summary>
 public class WebAudioManager : IAudioManager
 {
-    private readonly IJSRuntime _js;
+    private readonly IJSInProcessRuntime _js;
+    private readonly IJSRuntime _jsAsync;
     private readonly List<WebSoundInstance> _activeSounds = new();
     private readonly string _assetBaseUrl;
 
-    public WebAudioManager(IJSRuntime js, string assetBaseUrl)
+    public WebAudioManager(IJSInProcessRuntime js, string assetBaseUrl)
     {
         _js = js;
+        _jsAsync = js;
         _assetBaseUrl = assetBaseUrl.TrimEnd('/');
     }
 
     public IMapSound PlayMapSound(string filename, int x, int y, Guid mapId, bool loop, int loopInterval, int distance, IEntity? parent = null)
     {
-        var sound = new WebMapSound(_js, $"{_assetBaseUrl}/sounds/{filename}", filename, x, y, mapId, loop, parent);
+        var sound = new WebMapSound(_jsAsync, $"{_assetBaseUrl}/sounds/{filename}", filename, x, y, mapId, loop, parent);
         _ = sound.LoadAndPlayAsync();
         return sound;
     }
 
     public ISound PlaySound(string filename, bool loop)
     {
-        var sound = new WebSoundInstance(_js, $"{_assetBaseUrl}/sounds/{filename}", filename, loop);
+        var sound = new WebSoundInstance(_jsAsync, $"{_assetBaseUrl}/sounds/{filename}", filename, loop);
         _ = sound.LoadAndPlayAsync();
         _activeSounds.Add(sound);
         return sound;
     }
 
-    public void StopSound(ISound sound)
-    {
-        sound.Stop();
-    }
+    public void StopSound(ISound sound) => sound.Stop();
 
-    public void StopSound(IMapSound sound)
-    {
-        sound.Stop();
-    }
+    public void StopSound(IMapSound sound) => sound.Stop();
 
     public void StopAllSounds()
     {
@@ -54,12 +50,13 @@ public class WebAudioManager : IAudioManager
     public void PlayMusic(string filename, int fadeout = 0, int fadein = 0, bool loop = false)
     {
         var url = $"{_assetBaseUrl}/music/{filename}";
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectAudio.playMusic", url, 1.0f, loop, fadein);
+        _js.InvokeVoid("IntersectAudio.stopMusic", fadeout); // M6 fix: use fadeout param
+        _js.InvokeVoid("IntersectAudio.playMusic", url, 1.0f, loop, fadein);
     }
 
     public void StopMusic(int fadeout = 0)
     {
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectAudio.stopMusic", fadeout);
+        _js.InvokeVoid("IntersectAudio.stopMusic", fadeout);
     }
 }
 
@@ -87,8 +84,7 @@ public class WebSoundInstance : ISound
             if (bufferId > 0)
             {
                 Loaded = true;
-                _instanceId = ((IJSInProcessRuntime)_js).Invoke<int>(
-                    "IntersectAudio.playSound", bufferId, 1.0f, Loop);
+                _instanceId = await _js.InvokeAsync<int>("IntersectAudio.playSound", bufferId, 1.0f, Loop);
             }
         }
         catch (Exception ex)
@@ -99,9 +95,9 @@ public class WebSoundInstance : ISound
 
     public void Stop()
     {
-        if (_instanceId > 0)
+        if (_instanceId > 0 && _js is IJSInProcessRuntime jsSync)
         {
-            ((IJSInProcessRuntime)_js).InvokeVoid("IntersectAudio.stopSound", _instanceId);
+            jsSync.InvokeVoid("IntersectAudio.stopSound", _instanceId);
             _instanceId = -1;
         }
     }
@@ -112,12 +108,7 @@ public class WebSoundInstance : ISound
 public class WebMapSound : WebSoundInstance, IMapSound
 {
     public WebMapSound(IJSRuntime js, string url, string name, int x, int y, Guid mapId, bool loop, IEntity? parent)
-        : base(js, url, name, loop)
-    {
-    }
+        : base(js, url, name, loop) { }
 
-    public void UpdatePosition(int x, int y, Guid mapId)
-    {
-        // Positional audio can be implemented later with Web Audio panner nodes
-    }
+    public void UpdatePosition(int x, int y, Guid mapId) { }
 }

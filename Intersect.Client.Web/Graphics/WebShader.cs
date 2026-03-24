@@ -21,7 +21,7 @@ public class WebShader : GameShader
     private readonly Dictionary<string, Color> _colors = new();
     private readonly Dictionary<string, Vector2> _vectors = new();
 
-    public WebShader(IJSRuntime js, string name, int programId = 0)
+    public WebShader(IJSRuntime js, string name, int programId = 0) : base(name)
     {
         _js = js;
         _name = name;

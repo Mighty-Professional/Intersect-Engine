@@ -1,6 +1,6 @@
 using Intersect.Client.Framework.Database;
-using Intersect.Client.Framework.Graphics;
 using Microsoft.JSInterop;
+using Newtonsoft.Json;
 
 namespace Intersect.Client.Web.Database;
 
@@ -9,31 +9,38 @@ namespace Intersect.Client.Web.Database;
 /// </summary>
 public class WebDatabase : GameDatabase
 {
-    private readonly IJSRuntime _js;
+    private readonly IJSInProcessRuntime _js;
 
-    public WebDatabase(IJSRuntime js)
+    public WebDatabase(IJSInProcessRuntime js)
     {
         _js = js;
     }
 
     public override bool HasPreference(string key)
     {
-        var val = ((IJSInProcessRuntime)_js).Invoke<string?>("IntersectStorage.getItem", key);
+        var val = _js.Invoke<string?>("IntersectStorage.getItem", key);
         return val != null;
     }
 
-    public override void SavePreference(string key, string value)
+    public override void SavePreference<TValue>(string key, TValue value)
     {
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectStorage.setItem", key, value);
+        var json = JsonConvert.SerializeObject(value);
+        _js.InvokeVoid("IntersectStorage.setItem", key, json);
     }
 
     public override string LoadPreference(string key)
     {
-        return ((IJSInProcessRuntime)_js).Invoke<string?>("IntersectStorage.getItem", key) ?? string.Empty;
+        return _js.Invoke<string?>("IntersectStorage.getItem", key) ?? string.Empty;
     }
 
     public override void DeletePreference(string key)
     {
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectStorage.removeItem", key);
+        _js.InvokeVoid("IntersectStorage.removeItem", key);
+    }
+
+    public override bool LoadConfig()
+    {
+        // Web client loads config from server or defaults
+        return true;
     }
 }

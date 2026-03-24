@@ -12,6 +12,7 @@ namespace Intersect.Client.Web.Graphics;
 /// </summary>
 public class WebTexture : IGameTexture
 {
+    private readonly IJSInProcessRuntime? _jsSync;
     private readonly IJSRuntime _js;
     private readonly string? _url;
     private readonly Func<Stream>? _streamFactory;
@@ -26,6 +27,7 @@ public class WebTexture : IGameTexture
     public WebTexture(IJSRuntime js, string name, string url)
     {
         _js = js;
+        _jsSync = js as IJSInProcessRuntime;
         Name = name;
         _url = url;
     }
@@ -33,6 +35,7 @@ public class WebTexture : IGameTexture
     public WebTexture(IJSRuntime js, string name, Func<Stream> streamFactory)
     {
         _js = js;
+        _jsSync = js as IJSInProcessRuntime;
         Name = name;
         _streamFactory = streamFactory;
     }
@@ -40,11 +43,20 @@ public class WebTexture : IGameTexture
     public WebTexture(IJSRuntime js, string name, int platformTextureId, int width, int height)
     {
         _js = js;
+        _jsSync = js as IJSInProcessRuntime;
         Name = name;
         _platformTextureId = platformTextureId;
         _width = width;
         _height = height;
         _loaded = true;
+    }
+
+    /// <summary>Parameterless constructor for name-only textures (atlas references).</summary>
+    public WebTexture(IJSRuntime js, string name)
+    {
+        _js = js;
+        _jsSync = js as IJSInProcessRuntime;
+        Name = name;
     }
 
     public string Name { get; set; }
@@ -65,43 +77,42 @@ public class WebTexture : IGameTexture
     public Color this[int x, int y] => GetPixel(x, y);
     public Color this[System.Drawing.Point point] => GetPixel(point.X, point.Y);
 
-    public event Action? Disposed;
-    public event Action? Loaded;
-    public event Action? Unloaded;
+    public event Action<IAsset>? Disposed;
+    public event Action<IAsset>? Loaded;
+    public event Action<IAsset>? Unloaded;
+
+    public int CompareTo(IGameTexture? other)
+    {
+        if (other == null) return 1;
+        return string.Compare(Name, other.ToString(), StringComparison.Ordinal);
+    }
 
     public bool Unload()
     {
         if (_platformTextureId > 0)
         {
-            ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.deleteTexture", _platformTextureId);
+            _jsSync?.InvokeVoid("IntersectWebGL.deleteTexture", _platformTextureId);
             _platformTextureId = 0;
         }
         _loaded = false;
-        Unloaded?.Invoke();
+        Unloaded?.Invoke(this);
         return true;
     }
 
     public object? GetTexture() => _platformTextureId;
 
     public TPlatformTexture? GetTexture<TPlatformTexture>() where TPlatformTexture : class
-    {
-        return _platformTextureId as object as TPlatformTexture;
-    }
+        => _platformTextureId as object as TPlatformTexture;
 
     public void Reload()
     {
         if (!string.IsNullOrEmpty(_url))
         {
-            // Reload from URL - async fire-and-forget
             _ = LoadFromUrlAsync(_url);
         }
     }
 
-    public Color GetPixel(int x, int y)
-    {
-        // Pixel reading not efficiently supported in WebGL
-        return Color.Transparent;
-    }
+    public Color GetPixel(int x, int y) => Color.Transparent;
 
     internal async Task LoadFromUrlAsync(string url)
     {
@@ -113,7 +124,7 @@ public class WebTexture : IGameTexture
             _width = result.Width;
             _height = result.Height;
             _loaded = true;
-            Loaded?.Invoke();
+            Loaded?.Invoke(this);
         }
         catch (Exception ex)
         {
@@ -126,7 +137,7 @@ public class WebTexture : IGameTexture
         if (_disposed) return;
         _disposed = true;
         Unload();
-        Disposed?.Invoke();
+        Disposed?.Invoke(this);
     }
 
     public override string ToString() => $"WebTexture({Name}, {_width}x{_height})";

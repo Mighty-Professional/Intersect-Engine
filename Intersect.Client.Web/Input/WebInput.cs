@@ -12,10 +12,11 @@ namespace Intersect.Client.Web.Input;
 /// </summary>
 public class WebInput : GameInput
 {
-    private readonly IJSRuntime _js;
+    private readonly IJSInProcessRuntime _js;
     private IControlSet _controlSet;
+    private Vector2 _cachedMousePos;
 
-    public WebInput(IJSRuntime js)
+    public WebInput(IJSInProcessRuntime js)
     {
         _js = js;
         _controlSet = new WebControlSet();
@@ -34,41 +35,30 @@ public class WebInput : GameInput
 
     public override InputDeviceType CursorMovementDevice { get; set; } = InputDeviceType.Mouse;
 
-    public override bool IsKeyDown(Keys key)
-    {
-        return ((IJSInProcessRuntime)_js).Invoke<bool>("IntersectInput.isKeyDown", (int)key);
-    }
+    public override bool IsKeyDown(Keys key) => _js.Invoke<bool>("IntersectInput.isKeyDown", (int)key);
 
-    public override bool WasKeyDown(Keys key)
-    {
-        return ((IJSInProcessRuntime)_js).Invoke<bool>("IntersectInput.wasKeyDown", (int)key);
-    }
+    public override bool WasKeyDown(Keys key) => _js.Invoke<bool>("IntersectInput.wasKeyDown", (int)key);
 
-    public override bool IsMouseButtonDown(MouseButton mb)
-    {
-        return ((IJSInProcessRuntime)_js).Invoke<bool>("IntersectInput.isMouseButtonDown", (int)mb);
-    }
+    public override bool IsMouseButtonDown(MouseButton mb) => _js.Invoke<bool>("IntersectInput.isMouseButtonDown", (int)mb);
 
-    public override bool WasMouseButtonDown(MouseButton mb)
-    {
-        return ((IJSInProcessRuntime)_js).Invoke<bool>("IntersectInput.wasMouseButtonDown", (int)mb);
-    }
+    public override bool WasMouseButtonDown(MouseButton mb) => _js.Invoke<bool>("IntersectInput.wasMouseButtonDown", (int)mb);
 
     public override Vector2 GetMousePosition()
     {
-        var x = ((IJSInProcessRuntime)_js).Invoke<float>("IntersectInput.getMouseX");
-        var y = ((IJSInProcessRuntime)_js).Invoke<float>("IntersectInput.getMouseY");
-        return new Vector2(x, y);
+        return _cachedMousePos;
     }
 
-    public override Vector2 MousePosition => GetMousePosition();
+    public override Vector2 MousePosition => _cachedMousePos;
 
     public override void Update(TimeSpan elapsed)
     {
-        var mousePos = GetMousePosition();
+        // Cache mouse position once per frame (M7 fix)
+        var x = _js.Invoke<float>("IntersectInput.getMouseX");
+        var y = _js.Invoke<float>("IntersectInput.getMouseY");
+        _cachedMousePos = new Vector2(x, y);
 
         // Process text input
-        var textInput = ((IJSInProcessRuntime)_js).Invoke<string[]>("IntersectInput.getTextInput");
+        var textInput = _js.Invoke<string[]?>("IntersectInput.getTextInput");
         if (textInput != null)
         {
             foreach (var ch in textInput)
@@ -76,42 +66,30 @@ public class WebInput : GameInput
                 if (ch.Length > 0)
                 {
                     Interface.Interface.GwenInput?.ProcessMessage(
-                        new IntersectInput.InputEvent { Type = InputEvent.TextEntered, Character = ch[0] });
+                        new IntersectInput.InputEvent { Type = 4 /* TextEntered */, Character = ch[0] });
                 }
             }
         }
 
         // Process scroll
-        var scroll = ((IJSInProcessRuntime)_js).Invoke<ScrollDelta>("IntersectInput.getScrollDelta");
-        if (scroll.Y != 0)
+        var scroll = _js.Invoke<ScrollDelta>("IntersectInput.getScrollDelta");
+        if (Math.Abs(scroll.Y) > 0.01f)
         {
             Interface.Interface.GwenInput?.ProcessMessage(
                 new IntersectInput.InputEvent
                 {
-                    Type = InputEvent.MouseWheelScrolled,
+                    Type = 5 /* MouseWheelScrolled */,
                     Delta = scroll.Y > 0 ? -1 : 1
                 });
         }
     }
 
-    public override void OpenKeyboard(KeyboardType type, string text, bool autoCorrection, bool multiLine, bool secure)
-    {
-        // Browser handles keyboard natively
-    }
+    public override void OpenKeyboard(KeyboardType type, string text, bool autoCorrection, bool multiLine, bool secure) { }
 
     public override void OpenKeyboard(KeyboardType keyboardType, Action<string?> inputHandler, string description,
-        string text, bool multiline = false, uint maxLength = 1024, Rectangle? inputBounds = default)
-    {
-        // Browser handles keyboard natively
-    }
+        string text, bool multiline = false, uint maxLength = 1024, Rectangle? inputBounds = default) { }
 
     private record ScrollDelta(float X, float Y);
-
-    private record InputEvent
-    {
-        public const int TextEntered = 4;
-        public const int MouseWheelScrolled = 5;
-    }
 }
 
 /// <summary>

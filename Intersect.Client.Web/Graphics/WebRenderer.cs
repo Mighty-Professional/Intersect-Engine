@@ -8,57 +8,103 @@ using Microsoft.JSInterop;
 namespace Intersect.Client.Web.Graphics;
 
 /// <summary>
-/// WebGL2-based renderer implementing IGameRenderer via JS interop.
+/// WebGL2-based renderer implementing GameRenderer via JS interop.
 /// </summary>
 public partial class WebRenderer : GameRenderer
 {
-    private readonly IJSRuntime _js;
-    private int _whitePixelTextureId;
+    private readonly IJSInProcessRuntime _js;
     private int _screenWidth = 800;
     private int _screenHeight = 600;
     private int _fps;
     private int _frameCount;
     private DateTime _lastFpsTime = DateTime.UtcNow;
     private WebShader? _basicShader;
+    private FloatRect _currentView;
+    private IGameTexture? _whitePixel;
 
-    public WebRenderer(IJSRuntime js)
+    // Text cache to avoid recreating textures every frame (M1 fix)
+    private readonly Dictionary<string, (int textureId, int width, int height, long lastUsed)> _textCache = new();
+    private const int TextCacheMaxSize = 256;
+
+    public WebRenderer(IJSInProcessRuntime js)
     {
         _js = js;
     }
 
+    // Abstract property implementations
     public override GameShader BasicShader => _basicShader ??= new WebShader(_js, "basic");
-
-    public async Task InitAsync()
-    {
-        _whitePixelTextureId = await _js.InvokeAsync<int>("IntersectWebGL.getWhitePixelTextureId");
-    }
-
-    public override Resolution ActiveResolution => new(_screenWidth, _screenHeight);
-
-    public override string ResolutionAsString => $"{_screenWidth}x{_screenHeight}";
-
+    public override long UsedMemory => 0; // WebGL manages its own memory
+    public override int FPS => _fps;
+    public override List<string> ValidVideoModes => [$"{_screenWidth}x{_screenHeight}"];
     public override int ScreenWidth => _screenWidth;
-
     public override int ScreenHeight => _screenHeight;
 
-    public override int FPS => _fps;
-
-    public override List<string> ValidVideoModes => [$"{_screenWidth}x{_screenHeight}"];
-
-    public override void Clear(Color color)
+    // Abstract method implementations
+    public override void Init()
     {
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.clear",
-            color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
+        _whitePixel = CreateWhitePixel();
+    }
+
+    public override bool Begin()
+    {
+        _js.InvokeVoid("IntersectWebGL.beginFrame");
+        return true;
+    }
+
+    public override bool BeginScreenshot() => true;
+
+    protected override bool RecreateSpriteBatch() => true;
+
+    protected override void DoEnd()
+    {
+        _js.InvokeVoid("IntersectWebGL.endFrame");
+
+        // FPS calculation
+        _frameCount++;
+        var now = DateTime.UtcNow;
+        if ((now - _lastFpsTime).TotalSeconds >= 1.0)
+        {
+            _fps = _frameCount;
+            _frameCount = 0;
+            _lastFpsTime = now;
+        }
+
+        // Prune text cache
+        if (_textCache.Count > TextCacheMaxSize)
+        {
+            var cutoff = Environment.TickCount64 - 5000;
+            var stale = _textCache.Where(kv => kv.Value.lastUsed < cutoff).Select(kv => kv.Key).ToList();
+            foreach (var key in stale)
+            {
+                _js.InvokeVoid("IntersectWebGL.deleteTexture", _textCache[key].textureId);
+                _textCache.Remove(key);
+            }
+        }
+    }
+
+    public override void EndScreenshot() { }
+
+    public override void SetView(FloatRect view)
+    {
+        _currentView = view;
+        _js.InvokeVoid("IntersectWebGL.setView", view.X, view.Y, view.Width, view.Height);
+    }
+
+    public override FloatRect GetView() => _currentView;
+
+    public override IFont LoadFont(string fontName, IDictionary<int, FileInfo> fontSourcesBySize)
+    {
+        return new WebFont(_js, fontName, fontSourcesBySize.Keys);
     }
 
     public override void DrawTexture(
-        IGameTexture texture, float sourceX, float sourceY, float sourceWidth, float sourceHeight,
-        float targetX, float targetY, float targetWidth, float targetHeight,
+        IGameTexture tex, float sx, float sy, float sw, float sh,
+        float tx, float ty, float tw, float th,
         Color renderColor, IGameRenderTexture? renderTarget = null,
         GameBlendModes blendMode = GameBlendModes.None, GameShader? shader = null,
-        float rotationDegrees = 0)
+        float rotationDegrees = 0.0f, bool isUi = false, bool drawImmediate = false)
     {
-        if (texture is not WebTexture webTex) return;
+        if (tex is not WebTexture webTex) return;
         var texId = webTex.PlatformTextureId;
         if (texId <= 0) return;
 
@@ -72,79 +118,137 @@ public partial class WebRenderer : GameRenderer
             _ => 0
         };
 
-        // Handle atlas references
-        if (texture.AtlasReference != null)
+        if (tex.AtlasReference != null)
         {
-            var atlas = texture.AtlasReference;
-            sourceX += atlas.X;
-            sourceY += atlas.Y;
+            sx += tex.AtlasReference.X;
+            sy += tex.AtlasReference.Y;
         }
 
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.drawTexture",
-            texId,
-            sourceX, sourceY, sourceWidth, sourceHeight,
-            targetX, targetY, targetWidth, targetHeight,
+        _js.InvokeVoid("IntersectWebGL.drawTexture",
+            texId, sx, sy, sw, sh, tx, ty, tw, th,
             renderColor.R, renderColor.G, renderColor.B, renderColor.A,
             blendModeInt);
     }
 
-    public override void DrawString(string text, IFont font, int size, float x, float y,
-        float fontScale, Color fontColor, bool worldPos = true,
+    public override void DrawString(string text, IFont? gameFont, int size, float x, float y,
+        float fontScale, Color? fontColor, bool worldPos = true,
         IGameRenderTexture? renderTexture = null, Color? borderColor = null)
     {
-        if (string.IsNullOrEmpty(text) || font == null) return;
-
-        var fontName = font.Name;
+        if (string.IsNullOrEmpty(text) || gameFont == null) return;
+        var color = fontColor ?? Color.White;
         var fontSize = (int)(size * fontScale);
         if (fontSize <= 0) return;
 
         var bc = borderColor ?? new Color(0, 0, 0, 0);
 
-        // Render text to a temporary texture via Canvas2D
-        var result = ((IJSInProcessRuntime)_js).Invoke<TextRenderResult?>(
+        // Check text cache (M1 fix)
+        var cacheKey = $"{text}|{gameFont.Name}|{fontSize}|{color.R},{color.G},{color.B},{color.A}|{bc.R},{bc.G},{bc.B},{bc.A}";
+        if (_textCache.TryGetValue(cacheKey, out var cached))
+        {
+            _textCache[cacheKey] = cached with { lastUsed = Environment.TickCount64 };
+            _js.InvokeVoid("IntersectWebGL.drawTexture",
+                cached.textureId, 0f, 0f, (float)cached.width, (float)cached.height,
+                x, y, (float)cached.width, (float)cached.height,
+                255, 255, 255, 255, 0);
+            return;
+        }
+
+        var result = _js.Invoke<TextRenderResult?>(
             "IntersectWebGL.renderTextToTexture",
-            text, fontName, fontSize,
-            fontColor.R, fontColor.G, fontColor.B, fontColor.A,
+            text, gameFont.Name, fontSize,
+            color.R, color.G, color.B, color.A,
             bc.R, bc.G, bc.B, bc.A);
 
         if (result == null) return;
 
-        // Draw the text texture
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.drawTexture",
-            result.TextureId,
-            0f, 0f, (float)result.Width, (float)result.Height,
+        _textCache[cacheKey] = (result.TextureId, result.Width, result.Height, Environment.TickCount64);
+
+        _js.InvokeVoid("IntersectWebGL.drawTexture",
+            result.TextureId, 0f, 0f, (float)result.Width, (float)result.Height,
             x, y, (float)result.Width, (float)result.Height,
             255, 255, 255, 255, 0);
-
-        // Clean up temporary texture
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.deleteTexture", result.TextureId);
     }
 
-    public override void DrawString(string text, IFont font, int size, float x, float y,
+    public override void DrawString(string text, IFont? gameFont, int size, float x, float y,
         float fontScale, Color fontColor, bool worldPos,
         IGameRenderTexture renderTexture, FloatRect clipRect, Color? borderColor = null)
     {
-        // Set scissor for clipping
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.setScissor",
+        _js.InvokeVoid("IntersectWebGL.setScissor",
             (int)clipRect.X, (int)clipRect.Y, (int)clipRect.Width, (int)clipRect.Height);
-
-        DrawString(text, font, size, x, y, fontScale, fontColor, worldPos, renderTexture, borderColor);
-
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.clearScissor");
+        DrawString(text, gameFont, size, x, y, fontScale, fontColor, worldPos, renderTexture, borderColor);
+        _js.InvokeVoid("IntersectWebGL.clearScissor");
     }
 
     public override Vector2 MeasureText(string? text, IFont? font, int size, float fontScale)
     {
         if (string.IsNullOrEmpty(text) || font == null) return Vector2.Zero;
-
         var fontSize = (int)(size * fontScale);
         if (fontSize <= 0) return Vector2.Zero;
 
-        var result = ((IJSInProcessRuntime)_js).Invoke<TextMeasureResult>(
-            "IntersectWebGL.measureText", text, font.Name, fontSize);
-
+        var result = _js.Invoke<TextMeasureResult>("IntersectWebGL.measureText", text, font.Name, fontSize);
         return new Vector2(result.Width, result.Height);
     }
+
+    public override string GetResolutionString() => $"{_screenWidth}x{_screenHeight}";
+
+    public override bool DisplayModeChanged() => true;
+
+    protected override IGameTexture CreateGameTextureFromAtlasReference(string assetName, AtlasReference atlasReference)
+    {
+        var tex = new WebTexture(_js, assetName);
+        tex.AtlasReference = atlasReference;
+        return tex;
+    }
+
+    public override IGameTexture CreateTextureFromStreamFactory(string assetName, Func<Stream> streamFactory)
+    {
+        return new WebTexture(_js, assetName, streamFactory);
+    }
+
+    protected override IGameTexture CreateWhitePixel()
+    {
+        var whiteId = _js.Invoke<int>("IntersectWebGL.getWhitePixelTextureId");
+        return new WebTexture(_js, "__white_pixel__", whiteId, 1, 1);
+    }
+
+    public override GameTileBuffer CreateTileBuffer()
+    {
+        return new WebTileBuffer(_js);
+    }
+
+    public override void DrawBuffer(IVertexBuffer vertexBuffer, IIndexBuffer? indexBuffer = null)
+    {
+        // Custom buffer drawing - used for advanced rendering
+        if (vertexBuffer is not WebVertexBuffer wvb) return;
+        var wib = indexBuffer as WebIndexBuffer;
+
+        _js.InvokeVoid("IntersectWebGL.drawBuffers",
+            wvb.PlatformBufferId, wib?.PlatformBufferId ?? 0, 0,
+            wib?.Count ?? 0, 0);
+    }
+
+    public override void Close()
+    {
+        // Clean up text cache
+        foreach (var entry in _textCache)
+        {
+            _js.InvokeVoid("IntersectWebGL.deleteTexture", entry.Value.textureId);
+        }
+        _textCache.Clear();
+    }
+
+    public override GameShader LoadShader(string shaderName)
+    {
+        return new WebShader(_js, shaderName);
+    }
+
+    public override void Clear(Color color)
+    {
+        _js.InvokeVoid("IntersectWebGL.clear",
+            color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
+    }
+
+    public override void SetActiveVertexBuffer(IVertexBuffer vertexBuffer, int bufferIndex = 0) { }
 
     public override IGameRenderTexture CreateRenderTexture(int width, int height)
     {
@@ -161,34 +265,9 @@ public partial class WebRenderer : GameRenderer
         return new WebVertexBuffer(_js, count, typeof(TVertex), dynamic);
     }
 
-    public override void DrawTileBuffer(GameTileBuffer buffer)
-    {
-        if (buffer is not WebTileBuffer webBuffer) return;
-        if (buffer.Texture == null) return;
-
-        var texId = (buffer.Texture as WebTexture)?.PlatformTextureId ?? 0;
-        if (texId <= 0) return;
-
-        ((IJSInProcessRuntime)_js).InvokeVoid("IntersectWebGL.drawBuffers",
-            webBuffer.VertexBufferId, webBuffer.IndexBufferId, texId,
-            webBuffer.IndexCount, 0);
-    }
-
-    public override void RequestScreenshot(string? pathToScreenshots = default)
-    {
-        // Screenshots in web could trigger a download
-        Console.WriteLine("Screenshot not yet implemented for web client");
-    }
-
-    public IGameTexture LoadTexture(string name, string path)
-    {
-        return new WebTexture(_js, name, path);
-    }
-
-    public IGameTexture CreateTextureFromStreamFactory(string name, Func<Stream> factory)
-    {
-        return new WebTexture(_js, name, factory);
-    }
+    protected override void OnSetActiveShader(GameShader? shader) { }
+    protected override void OnSetActiveIndexBuffer(IIndexBuffer? indexBuffer) { }
+    protected override void OnCursorChanged(IGameTexture? newCursor) { }
 
     private record TextRenderResult(int TextureId, int Width, int Height);
     private record TextMeasureResult(int Width, int Height);

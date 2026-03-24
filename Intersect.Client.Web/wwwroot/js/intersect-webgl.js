@@ -256,6 +256,23 @@ window.IntersectWebGL = (() => {
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
             gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 
+            // Handle WebGL context loss (M3 fix)
+            canvas.addEventListener('webglcontextlost', (e) => {
+                e.preventDefault();
+                console.warn('WebGL context lost');
+            });
+            canvas.addEventListener('webglcontextrestored', () => {
+                console.log('WebGL context restored, reinitializing...');
+                // Reinitialize shaders and buffers
+                spriteProgram = createProgramFromSources(VERT_SRC, FRAG_SRC);
+                if (spriteProgram) {
+                    currentProgram = spriteProgram;
+                    gl.useProgram(spriteProgram);
+                }
+                initBatchBuffers();
+                // Textures will need to be reloaded by the C# side
+            });
+
             return true;
         },
 
