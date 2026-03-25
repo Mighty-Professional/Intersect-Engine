@@ -106,7 +106,7 @@ public class WebContentManager : GameContentManager
         if (dict.TryGetValue(key, out var cached))
             return cached as IGameTexture;
 
-        // Create and cache a new web texture (loads asynchronously)
+        // Create and cache a new web texture
         var contentPath = TextureTypeToContentPath(type);
         var url = $"{_assetBaseUrl}/{contentPath}/{name}";
         var texture = new WebTexture(_js, name, url);
@@ -185,20 +185,23 @@ public class WebContentManager : GameContentManager
 
     public override void LoadFonts()
     {
-        // Register default fonts that the engine expects
-        // The actual font files will be loaded from the server via CSS FontFace API
-        var defaultFonts = new[] { "sourcesanspro-regular", "sourcesanspro-bold", "sourcesanspro-italic" };
-        var defaultExtensions = new[] { ".ttf", ".otf", ".woff", ".woff2" };
-
-        foreach (var fontName in defaultFonts)
+        // Map of engine font names → web font file names
+        // The engine expects specific font names (e.g. "sourcesansproblack")
+        // but we serve them all from the same Source Sans Pro variable font
+        var fontMappings = new Dictionary<string, string>
         {
-            // Try to load font file from server
-            foreach (var ext in defaultExtensions)
-            {
-                var url = $"{_assetBaseUrl}/fonts/{fontName}{ext}";
-                _ = LoadWebFontAsync(fontName, url);
-                break; // Try first extension, async will handle failure
-            }
+            { "sourcesanspro-regular", "sourcesanspro-regular" },
+            { "sourcesanspro-bold", "sourcesanspro-bold" },
+            { "sourcesanspro-italic", "sourcesanspro-italic" },
+            { "sourcesansproblack", "sourcesanspro-bold" },  // Black weight → use bold
+            { "sourcesanspro", "sourcesanspro-regular" },    // Base name → regular
+        };
+
+        foreach (var (fontName, fileName) in fontMappings)
+        {
+            // Load font file from server via CSS FontFace API
+            var url = $"{_assetBaseUrl}/fonts/{fileName}.ttf";
+            _ = LoadWebFontAsync(fontName, url);
 
             // Register in font dictionary so GetFont() works immediately
             // Canvas2D will use system fallback until the web font loads
@@ -222,6 +225,74 @@ public class WebContentManager : GameContentManager
     public override void LoadShaders()
     {
         // WebGL shaders are GLSL, loaded from JS side
+    }
+
+    /// <summary>
+    /// Override layout loading for web — fetch JSON via HTTP instead of filesystem.
+    /// </summary>
+    protected override string GetLayout(UI stage, string name, string resolution, bool skipCache, out bool cacheHit)
+    {
+        cacheHit = false;
+        var key = new KeyValuePair<UI, string>(stage, $"{name}.{resolution}.json");
+        if (!skipCache && mUiDict.TryGetValue(key, out var rawLayout))
+        {
+            cacheHit = true;
+            return rawLayout;
+        }
+
+        var stageName = stage.ToString().ToLowerInvariant();
+        if (stage == UI.InGame)
+        {
+            stageName = "game";
+        }
+
+        // Try resolution-specific layout first, then generic
+        var paths = new List<string>();
+        if (!string.IsNullOrWhiteSpace(resolution))
+        {
+            paths.Add($"{_assetBaseUrl}/gui/layouts/{stageName}/{name}.{resolution}.json");
+        }
+        paths.Add($"{_assetBaseUrl}/gui/layouts/{stageName}/{name}.json");
+
+        foreach (var url in paths)
+        {
+            try
+            {
+                var jsSync = _js as Microsoft.JSInterop.IJSInProcessRuntime;
+                if (jsSync == null) continue;
+
+                var json = jsSync.Invoke<string?>("IntersectWebContent.fetchTextSync", url);
+                if (!string.IsNullOrWhiteSpace(json))
+                {
+                    mUiDict[key] = json;
+                    return json;
+                }
+            }
+            catch
+            {
+                // URL not found or fetch failed, try next
+            }
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Override to prevent filesystem writes in web context.
+    /// </summary>
+    public override void SaveUIJson(UI stage, string name, string json, string? resolution)
+    {
+        // No-op in web — can't write to server filesystem
+    }
+
+    /// <summary>
+    /// Override to use HTTP-based layout loading (skip filesystem watchers).
+    /// </summary>
+    public override bool GetLayout(UI stage, string name, string resolution, bool skipCache, Action<string, bool> layoutHandler)
+    {
+        var result = GetLayout(stage, name, resolution, skipCache, out var cacheHit);
+        layoutHandler(result, cacheHit);
+        return true;
     }
 
     public override void LoadSounds() { }

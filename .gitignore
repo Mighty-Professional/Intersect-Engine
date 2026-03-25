@@ -1,6 +1,9 @@
 # Asset resources (symlinked from Intersect-Assets repo)
 **/resources
 
+# Local run scripts
+run-*.sh
+
 #################
 ## Eclipse
 #################

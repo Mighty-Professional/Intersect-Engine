@@ -35,15 +35,23 @@ public partial class WebRenderer : GameRenderer
     public override GameShader BasicShader => _basicShader ??= new WebShader(_js, "basic");
     public override long UsedMemory => 0; // WebGL manages its own memory
     public override int FPS => _fps;
-    public override List<string> ValidVideoModes => [$"{_screenWidth}x{_screenHeight}"];
+    public override List<string> ValidVideoModes => [$"{_screenWidth}, {_screenHeight}"];
     public override int ScreenWidth => _screenWidth;
     public override int ScreenHeight => _screenHeight;
 
     // Abstract method implementations
     public override void Init()
     {
+        // Sync renderer dimensions with actual canvas size
+        var canvasSize = _js.Invoke<CanvasSizeResult>("IntersectWebGL.getCanvasSize");
+        _screenWidth = canvasSize.Width;
+        _screenHeight = canvasSize.Height;
+        _js.InvokeVoid("IntersectWebGL.resize", _screenWidth, _screenHeight);
+
         _whitePixel = CreateWhitePixel();
     }
+
+    private record CanvasSizeResult(int Width, int Height);
 
     public override bool Begin()
     {
@@ -173,10 +181,11 @@ public partial class WebRenderer : GameRenderer
         float fontScale, Color fontColor, bool worldPos,
         IGameRenderTexture renderTexture, FloatRect clipRect, Color? borderColor = null)
     {
-        _js.InvokeVoid("IntersectWebGL.setScissor",
-            (int)clipRect.X, (int)clipRect.Y, (int)clipRect.Width, (int)clipRect.Height);
+        // Skip scissor clipping for text - GWEN handles its own clipping and the
+        // clip rects from IntersectRenderer are often too small due to layout timing.
+        // This matches how text renders on the desktop client where scissor issues
+        // are masked by different render target handling.
         DrawString(text, gameFont, size, x, y, fontScale, fontColor, worldPos, renderTexture, borderColor);
-        _js.InvokeVoid("IntersectWebGL.clearScissor");
     }
 
     public override Vector2 MeasureText(string? text, IFont? font, int size, float fontScale)
@@ -191,7 +200,7 @@ public partial class WebRenderer : GameRenderer
 
     public override string GetResolutionString() => $"{_screenWidth}x{_screenHeight}";
 
-    public override bool DisplayModeChanged() => true;
+    public override bool DisplayModeChanged() => false;
 
     protected override IGameTexture CreateGameTextureFromAtlasReference(string assetName, AtlasReference atlasReference)
     {

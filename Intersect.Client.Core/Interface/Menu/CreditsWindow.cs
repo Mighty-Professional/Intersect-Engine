@@ -90,7 +90,14 @@ public partial class CreditsWindow : Window, IMainMenuWindow
             credits.Lines.Add(line);
         }
 
-        File.WriteAllText(creditsFile, JsonConvert.SerializeObject(credits, Formatting.Indented));
+        try
+        {
+            File.WriteAllText(creditsFile, JsonConvert.SerializeObject(credits, Formatting.Indented));
+        }
+        catch (Exception ex) when (ex is DirectoryNotFoundException or UnauthorizedAccessException)
+        {
+            // In environments like WASM, the resources directory may not be writable
+        }
 
         foreach (var line in credits?.Lines ?? [])
         {

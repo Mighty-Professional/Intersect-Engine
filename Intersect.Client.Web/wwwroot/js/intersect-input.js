@@ -10,6 +10,8 @@ window.IntersectInput = (() => {
     let scrollDeltaY = 0;
     let textInputBuffer = [];
     let canvas = null;
+    // Queue of mouse button events: { type: 'down'|'up', button: int, x: float, y: float }
+    let mouseEventQueue = [];
 
     // DOM key code → Intersect Keys enum mapping
     // This maps standard DOM key codes to the Intersect Keys enum values
@@ -78,7 +80,11 @@ window.IntersectInput = (() => {
 
             canvas.addEventListener('mousedown', (e) => {
                 const btn = mouseButtonMap[e.button];
-                if (btn !== undefined) mouseButtons.add(btn);
+                if (btn !== undefined) {
+                    mouseButtons.add(btn);
+                    const rect = canvas.getBoundingClientRect();
+                    mouseEventQueue.push({ type: 'down', button: btn, x: e.clientX - rect.left, y: e.clientY - rect.top });
+                }
                 e.preventDefault();
                 canvas.focus();
                 // Resume audio on user interaction
@@ -87,7 +93,11 @@ window.IntersectInput = (() => {
 
             canvas.addEventListener('mouseup', (e) => {
                 const btn = mouseButtonMap[e.button];
-                if (btn !== undefined) mouseButtons.delete(btn);
+                if (btn !== undefined) {
+                    mouseButtons.delete(btn);
+                    const rect = canvas.getBoundingClientRect();
+                    mouseEventQueue.push({ type: 'up', button: btn, x: e.clientX - rect.left, y: e.clientY - rect.top });
+                }
                 e.preventDefault();
             });
 
@@ -142,6 +152,13 @@ window.IntersectInput = (() => {
             const buf = textInputBuffer;
             textInputBuffer = [];
             return buf;
+        },
+
+        // Get queued mouse events (prevents losing clicks between polls)
+        getMouseEvents() {
+            const events = mouseEventQueue;
+            mouseEventQueue = [];
+            return events;
         },
 
         isCanvasFocused() {

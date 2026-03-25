@@ -8,7 +8,15 @@
     {
         if (firstRender)
         {
-            await GameBootstrap.StartAsync(JS);
+            try
+            {
+                await GameBootstrap.StartAsync(JS);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"FATAL: {ex}");
+                await JS.InvokeVoidAsync("console.error", $"FATAL: {ex}");
+            }
         }
     }
 }

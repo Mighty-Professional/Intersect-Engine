@@ -1,5 +1,7 @@
 using Intersect.Client.Core;
 using Intersect.Client.Framework.Network;
+using Intersect.Client.Interface.Menu;
+using Intersect.Configuration;
 using Intersect.Network;
 using Intersect.Network.Events;
 using Microsoft.JSInterop;
@@ -17,6 +19,7 @@ public class WebSocketClient : GameSocket
     private bool _connected;
     private int _ping;
     private bool _connecting;
+    private bool _statusCheckStarted;
 
     public WebSocketClient(IJSRuntime js, IClientContext context)
     {
@@ -101,6 +104,13 @@ public class WebSocketClient : GameSocket
 
     public override void Update()
     {
+        // Poll server status via HTTP API (replaces LiteNetLib unconnected packets)
+        if (!_statusCheckStarted)
+        {
+            _statusCheckStarted = true;
+            _ = PollServerStatusAsync();
+        }
+
         if (!_connected && !_connecting) return;
 
         // Check connection status
@@ -118,18 +128,19 @@ public class WebSocketClient : GameSocket
             _ping = _js.Invoke<int>("IntersectWebSocket.getPing");
         }
 
-        // Process incoming messages
-        var queueLength = _js.Invoke<int>("IntersectWebSocket.getQueueLength");
-        if (queueLength <= 0) return;
-
-        var messages = _js.Invoke<byte[][]?>("IntersectWebSocket.getMessages");
-        if (messages == null) return;
-
-        foreach (var messageData in messages)
+        // Process incoming messages one at a time
+        while (_js.Invoke<int>("IntersectWebSocket.getQueueLength") > 0)
         {
-            if (messageData == null)
+            var message = _js.Invoke<string?>("IntersectWebSocket.getNextMessage");
+
+            if (message == null)
             {
-                // Null signals disconnection
+                break; // No more messages
+            }
+
+            if (message.Length == 0)
+            {
+                // Empty string signals disconnection
                 if (_connected)
                 {
                     _connected = false;
@@ -140,6 +151,7 @@ public class WebSocketClient : GameSocket
 
             try
             {
+                var messageData = Convert.FromBase64String(message);
                 var deserialized = MessagePacker.Instance.Deserialize(messageData);
                 if (deserialized is IntersectPacket intersectPacket)
                 {
@@ -148,7 +160,7 @@ public class WebSocketClient : GameSocket
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to deserialize packet ({messageData.Length} bytes): {ex.Message}");
+                Console.Error.WriteLine($"Failed to deserialize packet ({message.Length} b64 chars): {ex.Message}");
             }
         }
     }
@@ -174,5 +186,38 @@ public class WebSocketClient : GameSocket
     public override void Dispose()
     {
         Disconnect("disposed");
+    }
+
+    /// <summary>
+    /// Polls the server's REST API to determine if it's online.
+    /// Replaces LiteNetLib unconnected UDP packets which aren't available over WebSocket.
+    /// </summary>
+    private async Task PollServerStatusAsync()
+    {
+        var host = ClientConfiguration.Instance.Host;
+        var port = ClientConfiguration.Instance.Port;
+
+        // Determine the API URL — use the same host/port as the game server
+        // since Kestrel serves both HTTP API and WebSocket on the same port
+        var isSecure = _js.Invoke<bool>("eval", "location.protocol === 'https:'");
+        var scheme = isSecure ? "https" : "http";
+        var apiUrl = $"{scheme}://{host}:{port}/api/v1/info";
+
+        while (true)
+        {
+            try
+            {
+                var isOnline = await ((IJSRuntime)_js).InvokeAsync<bool>(
+                    "IntersectWebSocket.checkServerStatus", apiUrl);
+
+                MainMenu.SetNetworkStatus(isOnline ? NetworkStatus.Online : NetworkStatus.Offline);
+            }
+            catch
+            {
+                MainMenu.SetNetworkStatus(NetworkStatus.Offline);
+            }
+
+            await Task.Delay(5000);
+        }
     }
 }

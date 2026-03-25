@@ -82,7 +82,17 @@ internal static partial class Bootstrapper
             }
         }
 
-        var clientConfiguration = ClientConfiguration.LoadAndSave();
+        ClientConfiguration clientConfiguration;
+        if (OperatingSystem.IsBrowser())
+        {
+            // File I/O not available in browser WASM — use defaults
+            clientConfiguration = ClientConfiguration.Instance;
+            clientConfiguration.Validate();
+        }
+        else
+        {
+            clientConfiguration = ClientConfiguration.LoadAndSave();
+        }
         loggingLevelSwitch.MinimumLevel = LevelConvert.ToSerilogLevel(clientConfiguration.LogLevel);
 
         if (commandLineOptions.Server is { } server)

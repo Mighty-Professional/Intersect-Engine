@@ -35,6 +35,9 @@ window.IntersectWebGL = (() => {
     const gpuBuffers = new Map();
     let nextBufferId = 1;
 
+    // Cached pixel data for GetPixel (skin color reading)
+    const texturePixelData = new Map();
+
     // State
     let viewMatrix = new Float32Array(16);
     let screenWidth = 800;
@@ -359,6 +362,19 @@ window.IntersectWebGL = (() => {
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
                     const id = nextTextureId++;
                     textures.set(id, { glTexture: tex, width: img.width, height: img.height });
+
+                    // Cache pixel data for GetPixel (used by skin color initialization)
+                    try {
+                        const tmpCanvas = document.createElement('canvas');
+                        tmpCanvas.width = img.width;
+                        tmpCanvas.height = img.height;
+                        const tmpCtx = tmpCanvas.getContext('2d');
+                        tmpCtx.drawImage(img, 0, 0);
+                        texturePixelData.set(id, tmpCtx.getImageData(0, 0, img.width, img.height));
+                    } catch (e) {
+                        // CORS or other issue — pixel reading won't be available for this texture
+                    }
+
                     resolve({ id, width: img.width, height: img.height });
                 };
                 img.onerror = () => reject(new Error('Failed to load: ' + url));
@@ -366,11 +382,66 @@ window.IntersectWebGL = (() => {
             });
         },
 
+        // Synchronous texture load using sync XHR + base64 data URI
+        // Used for critical textures (UI skin) that must be available immediately
+        createTextureFromUrlSync(url) {
+            try {
+                // Fetch raw bytes via sync XHR using overrideMimeType to get binary
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', url, false); // synchronous
+                xhr.overrideMimeType('text/plain; charset=x-user-defined');
+                xhr.send();
+                if (xhr.status !== 200) return null;
+
+                // Convert binary string to base64 data URI
+                const raw = xhr.responseText;
+                let binary = '';
+                for (let i = 0; i < raw.length; i++) {
+                    binary += String.fromCharCode(raw.charCodeAt(i) & 0xff);
+                }
+                const b64 = btoa(binary);
+                const ext = url.toLowerCase().endsWith('.jpg') || url.toLowerCase().endsWith('.jpeg') ? 'jpeg' : 'png';
+
+                const img = new Image();
+                img.src = `data:image/${ext};base64,${b64}`;
+
+                // Data URIs decode synchronously
+                if (img.naturalWidth === 0 || img.naturalHeight === 0) return null;
+
+                const tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                const id = nextTextureId++;
+                textures.set(id, { glTexture: tex, width: img.naturalWidth, height: img.naturalHeight });
+
+                // Cache pixel data for GetPixel
+                try {
+                    const tmpCanvas = document.createElement('canvas');
+                    tmpCanvas.width = img.naturalWidth;
+                    tmpCanvas.height = img.naturalHeight;
+                    const tmpCtx = tmpCanvas.getContext('2d');
+                    tmpCtx.drawImage(img, 0, 0);
+                    texturePixelData.set(id, tmpCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight));
+                } catch (e) { /* pixel reading won't be available */ }
+
+                console.log(`Sync loaded texture: ${url} (${img.naturalWidth}x${img.naturalHeight})`);
+                return { id, width: img.naturalWidth, height: img.naturalHeight };
+            } catch (e) {
+                console.error('Sync texture load failed for', url, e);
+                return null;
+            }
+        },
+
         deleteTexture(id) {
             const tex = textures.get(id);
             if (tex) {
                 gl.deleteTexture(tex.glTexture);
                 textures.delete(id);
+                texturePixelData.delete(id);
             }
         },
 
@@ -672,6 +743,16 @@ window.IntersectWebGL = (() => {
 
         getCanvasSize() {
             return { width: canvas?.clientWidth || 800, height: canvas?.clientHeight || 600 };
+        },
+
+        // Read a single pixel from a texture's cached pixel data
+        // (used for skin color initialization via GetPixel)
+        readPixel(textureId, x, y) {
+            const data = texturePixelData.get(textureId);
+            if (!data) return null;
+            if (x < 0 || y < 0 || x >= data.width || y >= data.height) return null;
+            const offset = (y * data.width + x) * 4;
+            return { r: data.data[offset], g: data.data[offset+1], b: data.data[offset+2], a: data.data[offset+3] };
         },
 
         // Load a web font via CSS FontFace API

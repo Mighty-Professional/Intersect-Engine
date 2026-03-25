@@ -106,13 +106,39 @@ public class WebTexture : IGameTexture
 
     public void Reload()
     {
+        if (_loaded && _platformTextureId > 0)
+        {
+            // Already loaded (e.g. via sync load), fire event immediately
+            // so subscribers like TexturedBase.OnTextureLoaded run synchronously
+            Loaded?.Invoke(this);
+            return;
+        }
+
         if (!string.IsNullOrEmpty(_url))
         {
             _ = LoadFromUrlAsync(_url);
         }
     }
 
-    public Color GetPixel(int x, int y) => Color.Transparent;
+    public Color GetPixel(int x, int y)
+    {
+        if (_platformTextureId <= 0 || _jsSync == null) return Color.Transparent;
+        try
+        {
+            var result = _jsSync.Invoke<PixelResult?>("IntersectWebGL.readPixel", _platformTextureId, x, y);
+            if (result != null)
+            {
+                return new Color(result.A, result.R, result.G, result.B);
+            }
+        }
+        catch
+        {
+            // Fall back to transparent if pixel reading fails
+        }
+        return Color.Transparent;
+    }
+
+    private record PixelResult(int R, int G, int B, int A);
 
     internal async Task LoadFromUrlAsync(string url)
     {
@@ -129,6 +155,38 @@ public class WebTexture : IGameTexture
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Failed to load texture '{Name}' from {url}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Load texture synchronously using XHR. Used for critical textures like UI skin.
+    /// </summary>
+    internal void LoadFromUrlSync(string url)
+    {
+        if (_jsSync == null) return;
+        try
+        {
+            var result = _jsSync.Invoke<TextureLoadResult?>(
+                "IntersectWebGL.createTextureFromUrlSync", url);
+            if (result != null)
+            {
+                _platformTextureId = result.Id;
+                _width = result.Width;
+                _height = result.Height;
+                _loaded = true;
+                Loaded?.Invoke(this);
+            }
+            else
+            {
+                Console.Error.WriteLine($"Sync load returned null for texture '{Name}' from {url}");
+                // Fall back to async
+                _ = LoadFromUrlAsync(url);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Sync load failed for texture '{Name}': {ex.Message}, falling back to async");
+            _ = LoadFromUrlAsync(url);
         }
     }
 

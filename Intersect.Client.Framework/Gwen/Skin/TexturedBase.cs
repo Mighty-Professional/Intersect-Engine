@@ -455,9 +455,23 @@ public partial class TexturedBase : Skin.Base
     /// </summary>
     /// <param name="renderer">Renderer to use.</param>
     /// <param name="texture"></param>
+    /// <summary>
+    /// Raised after the skin texture loads asynchronously and colors/textures are initialized.
+    /// Subscribe to this to trigger a UI refresh when the skin wasn't available at construction time.
+    /// </summary>
+    public event Action? SkinReady;
+
     public TexturedBase(Renderer.Base renderer, IGameTexture texture) : base(renderer)
     {
         _texture = texture ?? throw new ArgumentNullException(nameof(texture));
+
+        // If the texture is already loaded (e.g., synchronous load), initialize immediately
+        if (texture.Width > 0 && texture.Height > 0)
+        {
+            InitializeColors();
+            InitializeTextures();
+        }
+
         texture.Loaded += OnTextureLoaded;
         texture.Reload();
     }
@@ -466,6 +480,7 @@ public partial class TexturedBase : Skin.Base
     {
         InitializeColors();
         InitializeTextures();
+        SkinReady?.Invoke();
     }
 
     public TexturedBase(Renderer.Base renderer, GameContentManager contentManager)

@@ -49,12 +49,53 @@ public class WebInput : GameInput
 
     public new Vector2 MousePosition => _cachedMousePos;
 
+    private Vector2 _prevMousePos;
+    private readonly bool[] _prevMouseButtons = new bool[5];
+
     public override void Update(TimeSpan elapsed)
     {
-        // Cache mouse position once per frame (M7 fix)
+        // Cache mouse position once per frame
         var x = _js.Invoke<float>("IntersectInput.getMouseX");
         var y = _js.Invoke<float>("IntersectInput.getMouseY");
         _cachedMousePos = new Vector2(x, y);
+
+        // Send mouse move events to GWEN
+        if (_cachedMousePos != _prevMousePos)
+        {
+            Interface.Interface.GwenInput?.ProcessMessage(
+                new GwenInputMessage(
+                    IntersectInput.InputEvent.MouseMove,
+                    _cachedMousePos,
+                    MouseButton.None,
+                    Keys.None
+                ));
+            _prevMousePos = _cachedMousePos;
+        }
+
+        // Process queued mouse events (prevents losing clicks between frames)
+        var mouseEvents = _js.Invoke<MouseEvent[]?>("IntersectInput.getMouseEvents");
+        if (mouseEvents != null)
+        {
+            foreach (var evt in mouseEvents)
+            {
+                var btn = evt.Button switch
+                {
+                    0 => MouseButton.Left,
+                    1 => MouseButton.Right,
+                    2 => MouseButton.Middle,
+                    _ => MouseButton.None
+                };
+                if (btn == MouseButton.None) continue;
+
+                var pos = new Vector2(evt.X, evt.Y);
+                var inputEvent = evt.Type == "down"
+                    ? IntersectInput.InputEvent.MouseDown
+                    : IntersectInput.InputEvent.MouseUp;
+
+                Interface.Interface.GwenInput?.ProcessMessage(
+                    new GwenInputMessage(inputEvent, pos, btn, Keys.None));
+            }
+        }
 
         // Process text input
         var textInput = _js.Invoke<string[]?>("IntersectInput.getTextInput");
@@ -97,6 +138,7 @@ public class WebInput : GameInput
         string text, bool multiline = false, uint maxLength = 1024, Rectangle? inputBounds = default) { }
 
     private record ScrollDelta(float X, float Y);
+    private record MouseEvent(string Type, int Button, float X, float Y);
 }
 
 /// <summary>

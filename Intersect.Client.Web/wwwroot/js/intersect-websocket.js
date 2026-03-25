@@ -21,9 +21,13 @@ window.IntersectWebSocket = (() => {
 
                     socket.onmessage = (event) => {
                         if (event.data instanceof ArrayBuffer) {
-                            // Convert ArrayBuffer to regular array for C# interop
+                            // Encode as base64 for Blazor JSON interop (byte[] must be base64)
                             const bytes = new Uint8Array(event.data);
-                            messageQueue.push(Array.from(bytes));
+                            let binary = '';
+                            for (let i = 0; i < bytes.length; i++) {
+                                binary += String.fromCharCode(bytes[i]);
+                            }
+                            messageQueue.push(btoa(binary));
                         }
                     };
 
@@ -53,7 +57,18 @@ window.IntersectWebSocket = (() => {
         send(data) {
             if (!connected || !socket || socket.readyState !== WebSocket.OPEN) return false;
             try {
-                socket.send(new Uint8Array(data).buffer);
+                // data comes as base64 string from Blazor JSON interop
+                let bytes;
+                if (typeof data === 'string') {
+                    const binary = atob(data);
+                    bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) {
+                        bytes[i] = binary.charCodeAt(i);
+                    }
+                } else {
+                    bytes = new Uint8Array(data);
+                }
+                socket.send(bytes.buffer);
                 return true;
             } catch (err) {
                 console.error('WebSocket send error:', err);
@@ -61,11 +76,12 @@ window.IntersectWebSocket = (() => {
             }
         },
 
-        // Returns array of received messages (each is a byte array), or empty array
-        getMessages() {
-            const msgs = messageQueue;
-            messageQueue = [];
-            return msgs;
+        // Returns the next message as a base64 string, empty string if disconnected, or null if no messages
+        getNextMessage() {
+            if (messageQueue.length === 0) return null;
+            const msg = messageQueue.shift();
+            if (msg === null) return ''; // empty string signals disconnection
+            return msg;
         },
 
         // Returns number of queued messages
@@ -93,6 +109,16 @@ window.IntersectWebSocket = (() => {
             if (lastPingSent > 0) {
                 pingMs = Math.round(performance.now() - lastPingSent);
                 lastPingSent = 0;
+            }
+        },
+
+        // Check if server is reachable via HTTP API
+        async checkServerStatus(apiUrl) {
+            try {
+                const resp = await fetch(apiUrl, { mode: 'cors', signal: AbortSignal.timeout(3000) });
+                return resp.ok;
+            } catch {
+                return false;
             }
         }
     };

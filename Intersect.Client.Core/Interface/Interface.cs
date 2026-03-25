@@ -194,6 +194,13 @@ public static partial class Interface
             {
                 _skin.DefaultFontSize = Graphics.UIFontSize;
             }
+
+            // If the skin texture loads asynchronously (e.g., web client),
+            // recreate the UI once it's ready so controls get correct colors.
+            _skin.SkinReady += () =>
+            {
+                _initialized = false;
+            };
         }
 
         _uiMainMenu?.Dispose();
