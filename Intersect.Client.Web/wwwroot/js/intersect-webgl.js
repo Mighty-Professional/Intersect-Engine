@@ -2,6 +2,8 @@
 window.IntersectWebGL = (() => {
     let gl = null;
     let canvas = null;
+    let displayCanvas = null;
+    let displayCtx = null;
     let textCanvas = null;
     let textCtx = null;
 
@@ -229,13 +231,30 @@ window.IntersectWebGL = (() => {
             if (!canvas) { console.error('Canvas not found:', canvasId); return false; }
 
             gl = canvas.getContext('webgl2', {
-                alpha: false,
+                alpha: true,
                 antialias: false,
-                premultipliedAlpha: false,
-                preserveDrawingBuffer: false,
+                premultipliedAlpha: true,
+                preserveDrawingBuffer: true,
                 powerPreference: 'high-performance'
             });
             if (!gl) { console.error('WebGL2 not supported'); return false; }
+
+            displayCanvas = document.getElementById('display-canvas');
+            if (displayCanvas) {
+                displayCtx = displayCanvas.getContext('2d');
+                displayCanvas.width = canvas.width || 800;
+                displayCanvas.height = canvas.height || 600;
+
+                // TEST: Draw directly on 2D canvas to verify it's visible
+                displayCtx.fillStyle = 'red';
+                displayCtx.fillRect(0, 0, displayCanvas.width, displayCanvas.height);
+                displayCtx.fillStyle = 'white';
+                displayCtx.font = '48px sans-serif';
+                displayCtx.fillText('DISPLAY CANVAS TEST', 20, 80);
+                console.log('[DISPLAY_TEST] Drew red rect + text on display-canvas. If you see it, 2D canvas works.');
+            } else {
+                console.error('[DISPLAY_TEST] display-canvas element NOT FOUND');
+            }
 
             textCanvas = document.getElementById('text-canvas');
             if (textCanvas) textCtx = textCanvas.getContext('2d');
@@ -258,6 +277,37 @@ window.IntersectWebGL = (() => {
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
             gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+
+            // === SANITY TEST: Draw a bright magenta rectangle to verify WebGL output ===
+            {
+                const err0 = gl.getError();
+                if (err0 !== gl.NO_ERROR) console.error('[WEBGL_SANITY] GL error before test:', err0);
+
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.clearColor(1, 0, 1, 1); // magenta
+                gl.clear(gl.COLOR_BUFFER_BIT);
+
+                const err1 = gl.getError();
+                if (err1 !== gl.NO_ERROR) console.error('[WEBGL_SANITY] GL error after clear:', err1);
+
+                // Read back a pixel to verify
+                const pixel = new Uint8Array(4);
+                gl.readPixels(10, 10, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+                const err2 = gl.getError();
+                console.log(`[WEBGL_SANITY] Test pixel readback: rgba(${pixel[0]},${pixel[1]},${pixel[2]},${pixel[3]}) err=${err2}`);
+                console.log(`[WEBGL_SANITY] Canvas: ${canvas.width}x${canvas.height}, clientSize: ${canvas.clientWidth}x${canvas.clientHeight}`);
+                console.log(`[WEBGL_SANITY] Canvas visible: display=${getComputedStyle(canvas).display}, visibility=${getComputedStyle(canvas).visibility}, opacity=${getComputedStyle(canvas).opacity}`);
+                console.log(`[WEBGL_SANITY] Canvas zIndex: ${getComputedStyle(canvas).zIndex}, position: ${getComputedStyle(canvas).position}`);
+                console.log(`[WEBGL_SANITY] Canvas bounding rect:`, JSON.stringify(canvas.getBoundingClientRect()));
+
+                // Check what's on top of the canvas center
+                const rect = canvas.getBoundingClientRect();
+                const topEl = document.elementFromPoint(rect.left + rect.width/2, rect.top + rect.height/2);
+                console.log(`[WEBGL_SANITY] Element at canvas center:`, topEl?.tagName, topEl?.id, topEl?.className);
+
+                // Leave the magenta for 1 frame so user can see it flash
+                console.log('[WEBGL_SANITY] If you see a magenta flash, WebGL output is working. If not, canvas is obscured or GL context is broken.');
+            }
 
             // Handle WebGL context loss (M3 fix)
             canvas.addEventListener('webglcontextlost', (e) => {
@@ -288,6 +338,11 @@ window.IntersectWebGL = (() => {
             canvas.height = height;
             gl.viewport(0, 0, width, height);
 
+            if (displayCanvas) {
+                displayCanvas.width = width;
+                displayCanvas.height = height;
+            }
+
             if (textCanvas) {
                 textCanvas.width = width;
                 textCanvas.height = height;
@@ -307,6 +362,27 @@ window.IntersectWebGL = (() => {
 
         endFrame() {
             flushBatch();
+
+            // Copy WebGL output to 2D display canvas
+            if (displayCtx) {
+                displayCtx.drawImage(canvas, 0, 0);
+                if (this._endFrameCount === undefined) this._endFrameCount = 0;
+                this._endFrameCount++;
+                if (this._endFrameCount <= 5) {
+                    // Verify the copy worked by reading a pixel from the 2D canvas
+                    try {
+                        const px = displayCtx.getImageData(Math.floor(screenWidth/2), Math.floor(screenHeight/2), 1, 1).data;
+                        console.log(`[DISPLAY] endFrame #${this._endFrameCount}: display center pixel = rgba(${px[0]},${px[1]},${px[2]},${px[3]}), canvas=${canvas.width}x${canvas.height}, display=${displayCanvas.width}x${displayCanvas.height}`);
+                    } catch(e) {
+                        console.error(`[DISPLAY] getImageData failed: ${e.message}`);
+                    }
+                }
+            } else {
+                if (!this._noCtxWarned) {
+                    console.error('[DISPLAY] displayCtx is null - 2D canvas copy disabled');
+                    this._noCtxWarned = true;
+                }
+            }
         },
 
         clear(r, g, b, a) {
@@ -316,9 +392,34 @@ window.IntersectWebGL = (() => {
 
         setView(x, y, width, height) {
             flushBatch();
+            // Save for restoreView after framebuffer render
+            this._lastViewX = x;
+            this._lastViewY = y;
+            this._lastViewW = width;
+            this._lastViewH = height;
             ortho4x4(viewMatrix, x, x + width, y + height, y, -1, 1);
             const loc = gl.getUniformLocation(currentProgram, 'u_projection');
             gl.uniformMatrix4fv(loc, false, viewMatrix);
+        },
+
+        // Restore the last setView projection (after framebuffer rendering)
+        restoreView() {
+            if (this._lastViewW > 0) {
+                flushBatch();
+                ortho4x4(viewMatrix, this._lastViewX, this._lastViewX + this._lastViewW, this._lastViewY + this._lastViewH, this._lastViewY, -1, 1);
+                const loc = gl.getUniformLocation(currentProgram, 'u_projection');
+                gl.uniformMatrix4fv(loc, false, viewMatrix);
+            }
+        },
+
+        setViewport(x, y, w, h) {
+            flushBatch();
+            gl.viewport(x, y, w, h);
+        },
+
+        restoreViewport() {
+            flushBatch();
+            gl.viewport(0, 0, canvas.width, canvas.height);
         },
 
         setScissor(x, y, w, h) {
@@ -349,36 +450,55 @@ window.IntersectWebGL = (() => {
         },
 
         createTextureFromUrl(url) {
+            const self = this;
             return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
-                img.onload = () => {
-                    const tex = gl.createTexture();
-                    gl.bindTexture(gl.TEXTURE_2D, tex);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-                    const id = nextTextureId++;
-                    textures.set(id, { glTexture: tex, width: img.width, height: img.height });
+                function loadImage(imageUrl, isRetry) {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                        const tex = gl.createTexture();
+                        gl.bindTexture(gl.TEXTURE_2D, tex);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                        const id = nextTextureId++;
+                        textures.set(id, { glTexture: tex, width: img.width, height: img.height });
 
-                    // Cache pixel data for GetPixel (used by skin color initialization)
-                    try {
-                        const tmpCanvas = document.createElement('canvas');
-                        tmpCanvas.width = img.width;
-                        tmpCanvas.height = img.height;
-                        const tmpCtx = tmpCanvas.getContext('2d');
-                        tmpCtx.drawImage(img, 0, 0);
-                        texturePixelData.set(id, tmpCtx.getImageData(0, 0, img.width, img.height));
-                    } catch (e) {
-                        // CORS or other issue — pixel reading won't be available for this texture
-                    }
+                        // Cache pixel data for GetPixel (used by skin color initialization)
+                        try {
+                            const tmpCanvas = document.createElement('canvas');
+                            tmpCanvas.width = img.width;
+                            tmpCanvas.height = img.height;
+                            const tmpCtx = tmpCanvas.getContext('2d');
+                            tmpCtx.drawImage(img, 0, 0);
+                            texturePixelData.set(id, tmpCtx.getImageData(0, 0, img.width, img.height));
+                        } catch (e) {
+                            // CORS or other issue — pixel reading won't be available for this texture
+                        }
 
-                    resolve({ id, width: img.width, height: img.height });
-                };
-                img.onerror = () => reject(new Error('Failed to load: ' + url));
-                img.src = url;
+                        resolve({ id, width: img.width, height: img.height });
+                    };
+                    img.onerror = () => {
+                        // On Linux, filenames are case-sensitive. Try lowercase filename as fallback.
+                        if (!isRetry) {
+                            const lastSlash = imageUrl.lastIndexOf('/');
+                            if (lastSlash >= 0) {
+                                const dir = imageUrl.substring(0, lastSlash + 1);
+                                const file = imageUrl.substring(lastSlash + 1).toLowerCase();
+                                const lowerUrl = dir + file;
+                                if (lowerUrl !== imageUrl) {
+                                    loadImage(lowerUrl, true);
+                                    return;
+                                }
+                            }
+                        }
+                        reject(new Error('Failed to load: ' + url));
+                    };
+                    img.src = imageUrl;
+                }
+                loadImage(url, false);
             });
         },
 
@@ -387,10 +507,23 @@ window.IntersectWebGL = (() => {
         createTextureFromUrlSync(url) {
             try {
                 // Fetch raw bytes via sync XHR using overrideMimeType to get binary
-                const xhr = new XMLHttpRequest();
+                let xhr = new XMLHttpRequest();
                 xhr.open('GET', url, false); // synchronous
                 xhr.overrideMimeType('text/plain; charset=x-user-defined');
                 xhr.send();
+                // Case-insensitive fallback: try lowercase filename on 404
+                if (xhr.status === 404) {
+                    const lastSlash = url.lastIndexOf('/');
+                    if (lastSlash >= 0) {
+                        const lowerUrl = url.substring(0, lastSlash + 1) + url.substring(lastSlash + 1).toLowerCase();
+                        if (lowerUrl !== url) {
+                            xhr = new XMLHttpRequest();
+                            xhr.open('GET', lowerUrl, false);
+                            xhr.overrideMimeType('text/plain; charset=x-user-defined');
+                            xhr.send();
+                        }
+                    }
+                }
                 if (xhr.status !== 200) return null;
 
                 // Convert binary string to base64 data URI
@@ -742,7 +875,17 @@ window.IntersectWebGL = (() => {
         },
 
         getCanvasSize() {
-            return { width: canvas?.clientWidth || 800, height: canvas?.clientHeight || 600 };
+            // Use display canvas for size since game-canvas may be hidden
+            const c = displayCanvas || canvas;
+            return { width: c?.clientWidth || 800, height: c?.clientHeight || 600 };
+        },
+
+        // Returns a promise that resolves on the next requestAnimationFrame.
+        // Used by the C# frame loop to sync with the browser's display cycle.
+        // Without this, Task.Delay(1) fires before compositing and the canvas
+        // is cleared before the browser ever displays the rendered frame.
+        waitForNextFrame() {
+            return new Promise(resolve => requestAnimationFrame(resolve));
         },
 
         // Read a single pixel from a texture's cached pixel data

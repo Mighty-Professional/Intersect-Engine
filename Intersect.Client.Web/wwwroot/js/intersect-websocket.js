@@ -21,13 +21,25 @@ window.IntersectWebSocket = (() => {
 
                     socket.onmessage = (event) => {
                         if (event.data instanceof ArrayBuffer) {
-                            // Encode as base64 for Blazor JSON interop (byte[] must be base64)
                             const bytes = new Uint8Array(event.data);
-                            let binary = '';
-                            for (let i = 0; i < bytes.length; i++) {
-                                binary += String.fromCharCode(bytes[i]);
+                            // Log every message size for debugging packet transport
+                            if (messageQueue.length < 50 || bytes.length > 10000) {
+                                console.log(`[WS:RECV] Binary message: ${bytes.length} bytes (queue: ${messageQueue.length})`);
                             }
-                            messageQueue.push(btoa(binary));
+                            // Encode as base64 for Blazor JSON interop (byte[] must be base64)
+                            // Use chunked approach to avoid stack overflow on large packets
+                            const CHUNK = 8192;
+                            const parts = [];
+                            for (let i = 0; i < bytes.length; i += CHUNK) {
+                                parts.push(String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CHUNK, bytes.length))));
+                            }
+                            const b64 = btoa(parts.join(''));
+                            if (messageQueue.length < 50 || bytes.length > 10000) {
+                                console.log(`[WS:RECV] Base64 encoded: ${b64.length} chars from ${bytes.length} bytes`);
+                            }
+                            messageQueue.push(b64);
+                        } else {
+                            console.warn(`[WS:RECV] Non-binary message: type=${typeof event.data}, length=${event.data?.length}`);
                         }
                     };
 

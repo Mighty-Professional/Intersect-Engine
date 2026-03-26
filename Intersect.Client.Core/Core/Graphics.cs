@@ -256,16 +256,29 @@ public static partial class Graphics
         }
     }
 
+    private static int _inGameDiagCounter;
     public static void DrawInGame(TimeSpan deltaTime)
     {
+        _inGameDiagCounter++;
+        var shouldLog = _inGameDiagCounter <= 5 || _inGameDiagCounter % 300 == 0;
+
         if (Globals.Me?.MapInstance is not MapInstance currentMap)
         {
+            if (shouldLog)
+                Console.WriteLine($"[WEB:RENDER] DrawInGame SKIP: Me={Globals.Me != null}, MapInstance={Globals.Me?.MapInstance != null}");
             return;
         }
 
         if (Globals.NeedsMaps || Globals.MapGrid == null || RenderingEntities == null)
         {
+            if (shouldLog)
+                Console.WriteLine($"[WEB:RENDER] DrawInGame SKIP: NeedsMaps={Globals.NeedsMaps}, MapGrid={Globals.MapGrid != null}, RenderingEntities={RenderingEntities != null}");
             return;
+        }
+
+        if (shouldLog)
+        {
+            Console.WriteLine($"[WEB:RENDER] DrawInGame #{_inGameDiagCounter}: View=({CurrentView.X:F0},{CurrentView.Y:F0},{CurrentView.Width:F0},{CurrentView.Height:F0}) Scale={Renderer?.Scale:F2} FadeAlpha={Fade.Alpha:F0} TilesetsLoaded={GameContentManager.Current?.TilesetsLoaded} MapId={currentMap.Id}");
         }
 
         if (GridSwitched)
@@ -582,6 +595,15 @@ public static partial class Graphics
         EntitiesDrawn = 0;
         LightsDrawn = 0;
 
+        // Notify renderer of game state for comprehensive logging via reflection
+        // (can't reference WebRenderer directly from Client.Core)
+        try
+        {
+            var setMethod = renderer.GetType().GetMethod("SetInGameMode");
+            setMethod?.Invoke(renderer, new object[] { gameState == GameStates.InGame });
+        }
+        catch { /* Ignore if method doesn't exist */ }
+
         UpdateView();
 
         switch (gameState)
@@ -611,6 +633,12 @@ public static partial class Graphics
         renderer.Scale = Globals.Database.UIScale;
 
         Interface.Interface.DrawGui(deltaTime, totalTime);
+
+        // Log fade state periodically for in-game debugging
+        if (gameState == GameStates.InGame && (_inGameDiagCounter <= 5 || _inGameDiagCounter % 300 == 0))
+        {
+            Console.WriteLine($"[WEB:RENDER] Fade overlay: Alpha={Fade.Alpha:F0} FadeType={Fade.DoneFading()} DrawCalls={DrawCalls} MapsDrawn={MapsDrawn} EntitiesDrawn={EntitiesDrawn}");
+        }
 
         DrawGameTexture(
             tex: renderer.WhitePixel,

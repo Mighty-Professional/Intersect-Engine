@@ -61,6 +61,10 @@ public class WebRenderTexture : IGameRenderTexture
     public bool Begin()
     {
         _js.InvokeVoid("IntersectWebGL.bindFramebuffer", _framebufferId);
+        // Set viewport and projection to match framebuffer dimensions
+        // Otherwise content renders with the world-coordinate projection
+        _js.InvokeVoid("IntersectWebGL.setViewport", 0, 0, _width, _height);
+        _js.InvokeVoid("IntersectWebGL.setView", 0, 0, _width, _height);
         return true;
     }
 
@@ -73,6 +77,9 @@ public class WebRenderTexture : IGameRenderTexture
     public void End()
     {
         _js.InvokeVoid("IntersectWebGL.bindFramebuffer", 0);
+        // Restore screen viewport and projection
+        _js.InvokeVoid("IntersectWebGL.restoreViewport");
+        _js.InvokeVoid("IntersectWebGL.restoreView");
     }
 
     public bool Unload()

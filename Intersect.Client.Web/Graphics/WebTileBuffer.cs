@@ -35,8 +35,14 @@ public class WebTileBuffer : GameTileBuffer
     {
         _texture = texture;
 
-        var tw = texture.Width > 0 ? (float)texture.Width : 1f;
-        var th = texture.Height > 0 ? (float)texture.Height : 1f;
+        // Skip tiles whose textures haven't loaded yet (async loading)
+        if (texture.Width <= 0 || texture.Height <= 0)
+        {
+            return true; // Return true so the caller doesn't treat it as an error
+        }
+
+        var tw = (float)texture.Width;
+        var th = (float)texture.Height;
 
         var u0 = srcX / tw;
         var v0 = srcY / th;

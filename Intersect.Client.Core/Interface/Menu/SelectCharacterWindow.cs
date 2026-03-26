@@ -29,6 +29,7 @@ public partial class SelectCharacterWindow : Window
     private readonly Button _buttonLogout;
 
     private ImagePanel[]? _renderLayers;
+    private IGameTexture? _pendingTexture;
 
     public CharacterSelectionPreviewMetadata[]? CharacterSelectionPreviews
     {
@@ -225,6 +226,13 @@ public partial class SelectCharacterWindow : Window
             return;
         }
 
+        // Unsubscribe from any previous pending texture load
+        if (_pendingTexture != null)
+        {
+            _pendingTexture.Loaded -= OnPendingTextureLoaded;
+            _pendingTexture = null;
+        }
+
         _selectCharacterRightButton.IsHidden = CharacterSelectionPreviews.Length <= 1;
         _selectCharacterLeftButton.IsHidden = CharacterSelectionPreviews.Length <= 1;
 
@@ -265,6 +273,14 @@ public partial class SelectCharacterWindow : Window
         var faceTexture = GameContentManager.Current.GetTexture(TextureType.Face, selectedPreviewMetadata.Face);
         if (faceTexture != default)
         {
+            // If face texture hasn't loaded yet (async), wait for it
+            if (faceTexture.Width == 0 || faceTexture.Height == 0)
+            {
+                _pendingTexture = faceTexture;
+                _pendingTexture.Loaded += OnPendingTextureLoaded;
+                return;
+            }
+
             var faceLayer = _renderLayers[0];
             var scale = Math.Min(
                 _preview.InnerWidth / (double)faceTexture.Width,
@@ -329,6 +345,15 @@ public partial class SelectCharacterWindow : Window
                 continue;
             }
 
+            // If texture hasn't loaded yet (async), subscribe to reload display when ready
+            if (layerTex.Width == 0 || layerTex.Height == 0)
+            {
+                _pendingTexture = layerTex;
+                _pendingTexture.Loaded += OnPendingTextureLoaded;
+                paperdollContainer.Hide();
+                continue;
+            }
+
             var imgWidth = layerTex.Width;
             var imgHeight = layerTex.Height;
             var textureWidth = imgWidth / Options.Instance.Sprites.NormalFrames;
@@ -343,6 +368,13 @@ public partial class SelectCharacterWindow : Window
 
             paperdollContainer.Show();
         }
+    }
+
+    private void OnPendingTextureLoaded(IAsset asset)
+    {
+        asset.Loaded -= OnPendingTextureLoaded;
+        _pendingTexture = null;
+        UpdateDisplay();
     }
 
     public override void Show()

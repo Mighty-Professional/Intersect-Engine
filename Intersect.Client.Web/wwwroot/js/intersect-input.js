@@ -12,6 +12,8 @@ window.IntersectInput = (() => {
     let canvas = null;
     // Queue of mouse button events: { type: 'down'|'up', button: int, x: float, y: float }
     let mouseEventQueue = [];
+    // Queue of key events: { type: 'down'|'up', key: int }
+    let keyEventQueue = [];
 
     // DOM key code → Intersect Keys enum mapping
     // This maps standard DOM key codes to the Intersect Keys enum values
@@ -60,16 +62,22 @@ window.IntersectInput = (() => {
 
             canvas.addEventListener('keydown', (e) => {
                 const key = keyMap[e.code];
-                if (key !== undefined) keysDown.add(key);
-                // Prevent default for game keys (arrows, space, tab, etc.)
-                if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','Tab'].includes(e.code)) {
+                if (key !== undefined) {
+                    keysDown.add(key);
+                    keyEventQueue.push({ type: 'down', key });
+                }
+                // Prevent default for game keys (arrows, space, tab, backspace, etc.)
+                if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','Tab','Backspace'].includes(e.code)) {
                     e.preventDefault();
                 }
             });
 
             canvas.addEventListener('keyup', (e) => {
                 const key = keyMap[e.code];
-                if (key !== undefined) keysDown.delete(key);
+                if (key !== undefined) {
+                    keysDown.delete(key);
+                    keyEventQueue.push({ type: 'up', key });
+                }
             });
 
             canvas.addEventListener('mousemove', (e) => {
@@ -158,6 +166,13 @@ window.IntersectInput = (() => {
         getMouseEvents() {
             const events = mouseEventQueue;
             mouseEventQueue = [];
+            return events;
+        },
+
+        // Get queued key events (prevents losing key presses between polls)
+        getKeyEvents() {
+            const events = keyEventQueue;
+            keyEventQueue = [];
             return events;
         },
 

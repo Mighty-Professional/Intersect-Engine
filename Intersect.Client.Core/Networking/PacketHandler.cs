@@ -1,3 +1,4 @@
+using System.Linq;
 using Intersect.Client.Core;
 using Intersect.Client.Entities;
 using Intersect.Client.Entities.Events;
@@ -653,13 +654,28 @@ internal sealed partial class PacketHandler
     //GameDataPacket
     public void HandlePacket(IPacketSender packetSender, GameDataPacket packet)
     {
-        foreach (var pkt in packet.GameObjects)
+        Console.WriteLine($"[WEB:PACKET] GameDataPacket received: {packet.GameObjects?.Length ?? 0} game objects");
+        var tilesetCount = 0;
+        if (packet.GameObjects != null)
         {
-            HandlePacket(pkt);
+            foreach (var pkt in packet.GameObjects)
+            {
+                if (pkt.Type == GameObjectType.Tileset) tilesetCount++;
+                HandlePacket(pkt);
+            }
         }
+        Console.WriteLine($"[WEB:PACKET] GameDataPacket processed: {tilesetCount} tilesets, TilesetDescriptor.Lookup has {TilesetDescriptor.Lookup.Count} entries");
 
         CustomColors.Load(packet.ColorsJson);
         Globals.HasGameData = true;
+
+        // Explicitly load tilesets now that HasGameData is true and all GameObjects are processed
+        var tilesetNames = TilesetDescriptor.GetNameList();
+        Console.WriteLine($"[WEB:PACKET] Post-GameData tileset names: {tilesetNames.Length} -> [{string.Join(", ", tilesetNames.Take(5))}]");
+        if (tilesetNames.Length > 0)
+        {
+            Globals.ContentManager.LoadTilesets(tilesetNames);
+        }
     }
 
     //MapListPacket

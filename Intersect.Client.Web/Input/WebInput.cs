@@ -97,6 +97,21 @@ public class WebInput : GameInput
             }
         }
 
+        // Process key events (for non-character keys like Backspace, Tab, Enter, etc.)
+        var keyEvents = _js.Invoke<KeyEvent[]?>("IntersectInput.getKeyEvents");
+        if (keyEvents != null)
+        {
+            foreach (var evt in keyEvents)
+            {
+                var inputEvent = evt.Type == "down"
+                    ? IntersectInput.InputEvent.KeyDown
+                    : IntersectInput.InputEvent.KeyUp;
+
+                Interface.Interface.GwenInput?.ProcessMessage(
+                    new GwenInputMessage(inputEvent, _cachedMousePos, MouseButton.None, (Keys)evt.Key));
+            }
+        }
+
         // Process text input
         var textInput = _js.Invoke<string[]?>("IntersectInput.getTextInput");
         if (textInput != null)
@@ -139,6 +154,7 @@ public class WebInput : GameInput
 
     private record ScrollDelta(float X, float Y);
     private record MouseEvent(string Type, int Button, float X, float Y);
+    private record KeyEvent(string Type, int Key);
 }
 
 /// <summary>

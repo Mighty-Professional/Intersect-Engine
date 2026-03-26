@@ -21,6 +21,9 @@ public partial class WebRenderer : GameRenderer
     private WebShader? _basicShader;
     private FloatRect _currentView;
     private IGameTexture? _whitePixel;
+    private int _drawCallsThisFrame;
+    private int _totalDrawCalls;
+    private int _renderFrameNumber;
 
     // Text cache to avoid recreating textures every frame (M1 fix)
     private readonly Dictionary<string, (int textureId, int width, int height, long lastUsed)> _textCache = new();
@@ -29,6 +32,7 @@ public partial class WebRenderer : GameRenderer
     public WebRenderer(IJSInProcessRuntime js)
     {
         _js = js;
+        WebDebugLog.Log("RENDERER", "WebRenderer created");
     }
 
     // Abstract property implementations
@@ -42,30 +46,64 @@ public partial class WebRenderer : GameRenderer
     // Abstract method implementations
     public override void Init()
     {
+        WebDebugLog.Log("RENDERER", "Init() called");
         // Sync renderer dimensions with actual canvas size
         var canvasSize = _js.Invoke<CanvasSizeResult>("IntersectWebGL.getCanvasSize");
         _screenWidth = canvasSize.Width;
         _screenHeight = canvasSize.Height;
+        WebDebugLog.Log("RENDERER", $"Canvas size: {_screenWidth}x{_screenHeight}");
+
         _js.InvokeVoid("IntersectWebGL.resize", _screenWidth, _screenHeight);
 
         _whitePixel = CreateWhitePixel();
+        WebDebugLog.Log("RENDERER", $"White pixel created: {(_whitePixel as WebTexture)?.PlatformTextureId}");
+        WebDebugLog.Log("RENDERER", "Init() complete");
     }
 
     private record CanvasSizeResult(int Width, int Height);
 
     public override bool Begin()
     {
+        _renderFrameNumber++;
+        _drawCallsThisFrame = 0;
         _js.InvokeVoid("IntersectWebGL.beginFrame");
         return true;
     }
 
+    /// <summary>Called from the game loop to signal we're in a specific game state for logging.</summary>
+    public void SetInGameMode(bool inGame)
+    {
+        if (inGame && !_inGameMode)
+        {
+            _inGameFrameCount = 0; // Reset on first entry
+        }
+        _inGameMode = inGame;
+        if (inGame) _inGameFrameCount++;
+    }
+
     public override bool BeginScreenshot() => true;
 
-    protected override bool RecreateSpriteBatch() => true;
+    protected override bool RecreateSpriteBatch()
+    {
+        // Re-apply the current view projection when scale changes
+        // MonoGame does this via SpriteBatch.Begin with CreateViewMatrix
+        if (_currentView.Width > 0 && _currentView.Height > 0)
+        {
+            _js.InvokeVoid("IntersectWebGL.setView", _currentView.X, _currentView.Y, _currentView.Width, _currentView.Height);
+        }
+        return true;
+    }
 
     protected override void DoEnd()
     {
+        // Log per-frame draw call summary for in-game frames
+        if (_inGameMode && _inGameFrameCount <= 10)
+        {
+            WebDebugLog.Log("RENDERER", $"[FRAME SUMMARY] InGameFrame #{_inGameFrameCount}: {_drawCallsThisFrame} draw calls, view=({_currentView.X:F0},{_currentView.Y:F0},{_currentView.Width:F0},{_currentView.Height:F0})");
+        }
+
         _js.InvokeVoid("IntersectWebGL.endFrame");
+        _totalDrawCalls += _drawCallsThisFrame;
 
         // FPS calculation
         _frameCount++;
@@ -73,7 +111,12 @@ public partial class WebRenderer : GameRenderer
         if ((now - _lastFpsTime).TotalSeconds >= 1.0)
         {
             _fps = _frameCount;
+            if (_renderFrameNumber <= 5 || _renderFrameNumber % 300 == 0)
+            {
+                WebDebugLog.Log("RENDERER", $"FPS={_fps}, DrawCalls/sec={_totalDrawCalls}, TextCache={_textCache.Count}");
+            }
             _frameCount = 0;
+            _totalDrawCalls = 0;
             _lastFpsTime = now;
         }
 
@@ -96,14 +139,24 @@ public partial class WebRenderer : GameRenderer
     {
         _currentView = view;
         _js.InvokeVoid("IntersectWebGL.setView", view.X, view.Y, view.Width, view.Height);
+
+        if (_renderFrameNumber <= 3)
+        {
+            WebDebugLog.Log("RENDERER", $"SetView({view.X}, {view.Y}, {view.Width}, {view.Height})");
+        }
     }
 
     public override FloatRect GetView() => _currentView;
 
     public override IFont LoadFont(string fontName, IDictionary<int, FileInfo> fontSourcesBySize)
     {
+        WebDebugLog.Log("RENDERER", $"LoadFont: {fontName}");
         return new WebFont(_js, fontName, fontSourcesBySize.Keys);
     }
+
+    // Track in-game frame count for logging
+    private bool _inGameMode;
+    private int _inGameFrameCount;
 
     public override void DrawTexture(
         IGameTexture tex, float sx, float sy, float sw, float sh,
@@ -112,9 +165,36 @@ public partial class WebRenderer : GameRenderer
         GameBlendModes blendMode = GameBlendModes.None, GameShader? shader = null,
         float rotationDegrees = 0.0f, bool isUi = false, bool drawImmediate = false)
     {
-        if (tex is not WebTexture webTex) return;
-        var texId = webTex.PlatformTextureId;
-        if (texId <= 0) return;
+        // Support both WebTexture and WebRenderTexture as source textures
+        int texId;
+        string texName;
+        bool isRenderTexture = false;
+        if (tex is WebTexture webTex)
+        {
+            texId = webTex.PlatformTextureId;
+            texName = webTex.Name;
+        }
+        else if (tex is WebRenderTexture wrt)
+        {
+            texId = (int)(wrt.GetTexture() ?? 0);
+            texName = wrt.Name ?? "RenderTarget";
+            isRenderTexture = true;
+        }
+        else
+        {
+            if (_renderFrameNumber <= 3 || (_inGameMode && _inGameFrameCount <= 10))
+                WebDebugLog.Log("RENDERER", $"DrawTexture SKIP: tex is {tex?.GetType().Name ?? "null"}, unsupported type");
+            return;
+        }
+        if (texId <= 0)
+        {
+            // Log ALL skipped textures during first 10 in-game frames
+            if (_renderFrameNumber <= 3 || (_inGameMode && _inGameFrameCount <= 10))
+                WebDebugLog.Log("RENDERER", $"DrawTexture SKIP: {texName} texId={texId} (not loaded) isUi={isUi}");
+            return;
+        }
+
+        _drawCallsThisFrame++;
 
         int blendModeInt = blendMode switch
         {
@@ -132,10 +212,49 @@ public partial class WebRenderer : GameRenderer
             sy += tex.AtlasReference.Bounds.Y;
         }
 
+        // If drawing TO a render target, bind it and set its projection
+        if (renderTarget is WebRenderTexture destRt)
+        {
+            var rtTexId = (int)(destRt.GetTexture() ?? 0);
+            if (rtTexId > 0)
+            {
+                // Bind framebuffer and set projection for render target dimensions
+                destRt.Begin();
+            }
+        }
+
+        // UI draws use screen coordinates but the projection is in world coordinates.
+        // Offset by the current view position to convert screen coords → world coords.
+        if (isUi && renderTarget == null)
+        {
+            tx += _currentView.X;
+            ty += _currentView.Y;
+        }
+
+        // Log ALL draw calls during first 10 in-game frames and first 3 menu frames
+        if (_renderFrameNumber <= 3 || (_inGameMode && _inGameFrameCount <= 10))
+        {
+            WebDebugLog.Log("RENDERER", $"DrawTexture OK: {texName} texId={texId} src=({sx:F0},{sy:F0},{sw:F0},{sh:F0}) dst=({tx:F0},{ty:F0},{tw:F0},{th:F0}) rgba=({renderColor.R},{renderColor.G},{renderColor.B},{renderColor.A}) isUi={isUi} blend={blendMode}");
+        }
+
+        // WebGL framebuffers are Y-flipped (bottom-up). When drawing FROM a render texture,
+        // flip the source V coordinates so the image appears right-side up.
+        if (isRenderTexture)
+        {
+            sy = sh - sy;  // flip: move source origin to bottom
+            sh = -sh;      // negative height = flip vertically
+        }
+
         _js.InvokeVoid("IntersectWebGL.drawTexture",
             texId, sx, sy, sw, sh, tx, ty, tw, th,
             renderColor.R, renderColor.G, renderColor.B, renderColor.A,
             blendModeInt);
+
+        // Unbind render target after drawing to it
+        if (renderTarget is WebRenderTexture destRt2)
+        {
+            destRt2.End();
+        }
     }
 
     public override void DrawString(string text, IFont? gameFont, int size, float x, float y,
@@ -146,6 +265,13 @@ public partial class WebRenderer : GameRenderer
         var color = fontColor ?? Color.White;
         var fontSize = (int)(size * fontScale);
         if (fontSize <= 0) return;
+
+        // UI text (worldPos=false) uses screen coordinates but projection is in world coords.
+        if (!worldPos && renderTexture == null)
+        {
+            x += _currentView.X;
+            y += _currentView.Y;
+        }
 
         var bc = borderColor ?? new Color(0, 0, 0, 0);
 
@@ -158,6 +284,7 @@ public partial class WebRenderer : GameRenderer
                 cached.textureId, 0f, 0f, (float)cached.width, (float)cached.height,
                 x, y, (float)cached.width, (float)cached.height,
                 255, 255, 255, 255, 0);
+            _drawCallsThisFrame++;
             return;
         }
 
@@ -167,7 +294,12 @@ public partial class WebRenderer : GameRenderer
             color.R, color.G, color.B, color.A,
             bc.R, bc.G, bc.B, bc.A);
 
-        if (result == null) return;
+        if (result == null)
+        {
+            if (_renderFrameNumber <= 3)
+                WebDebugLog.Log("RENDERER", $"DrawString: renderTextToTexture returned null for '{text}' font={gameFont.Name} size={fontSize}");
+            return;
+        }
 
         _textCache[cacheKey] = (result.TextureId, result.Width, result.Height, Environment.TickCount64);
 
@@ -175,6 +307,7 @@ public partial class WebRenderer : GameRenderer
             result.TextureId, 0f, 0f, (float)result.Width, (float)result.Height,
             x, y, (float)result.Width, (float)result.Height,
             255, 255, 255, 255, 0);
+        _drawCallsThisFrame++;
     }
 
     public override void DrawString(string text, IFont? gameFont, int size, float x, float y,
@@ -227,7 +360,12 @@ public partial class WebRenderer : GameRenderer
 
     public override void DrawBuffer(IVertexBuffer vertexBuffer, IIndexBuffer? indexBuffer = null)
     {
-        if (vertexBuffer is not WebVertexBuffer wvb) return;
+        if (vertexBuffer is not WebVertexBuffer wvb)
+        {
+            if (_inGameMode && _inGameFrameCount <= 10)
+                WebDebugLog.Log("RENDERER", $"DrawBuffer SKIP: vertexBuffer is {vertexBuffer?.GetType().Name ?? "null"}");
+            return;
+        }
         var wib = indexBuffer as WebIndexBuffer;
 
         // Get texture ID from the active shader's texture
@@ -240,13 +378,23 @@ public partial class WebRenderer : GameRenderer
         if (wib?.IndexType == typeof(uint) || wib?.IndexType == typeof(int))
             indexType = 1;
 
+        var indexCount = wib?.Count ?? 0;
+
+        // Log ALL tile buffer draws during first in-game frames
+        if (_inGameMode && _inGameFrameCount <= 10)
+        {
+            WebDebugLog.Log("RENDERER", $"DrawBuffer: vb={wvb.PlatformBufferId} ib={wib?.PlatformBufferId ?? 0} tex={textureId} indices={indexCount}");
+        }
+
         _js.InvokeVoid("IntersectWebGL.drawBuffers",
             wvb.PlatformBufferId, wib?.PlatformBufferId ?? 0, textureId,
-            wib?.Count ?? 0, 0, indexType);
+            indexCount, 0, indexType);
+        _drawCallsThisFrame++;
     }
 
     public override void Close()
     {
+        WebDebugLog.Log("RENDERER", "Close() called");
         // Clean up text cache
         foreach (var entry in _textCache)
         {
@@ -262,6 +410,10 @@ public partial class WebRenderer : GameRenderer
 
     public override void Clear(Color color)
     {
+        if (_renderFrameNumber <= 3)
+        {
+            WebDebugLog.Log("RENDERER", $"Clear({color.R},{color.G},{color.B},{color.A})");
+        }
         _js.InvokeVoid("IntersectWebGL.clear",
             color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
     }

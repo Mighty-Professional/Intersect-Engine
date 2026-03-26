@@ -1,6 +1,5 @@
 using Intersect.Client.Framework.Database;
 using Microsoft.JSInterop;
-using Newtonsoft.Json;
 
 namespace Intersect.Client.Web.Database;
 
@@ -24,8 +23,8 @@ public class WebDatabase : GameDatabase
 
     public override void SavePreference<TValue>(string key, TValue value)
     {
-        var json = JsonConvert.SerializeObject(value);
-        _js.InvokeVoid("IntersectStorage.setItem", key, json);
+        var stringValue = Convert.ToString(value) ?? string.Empty;
+        _js.InvokeVoid("IntersectStorage.setItem", key, stringValue);
     }
 
     public override string LoadPreference(string key)

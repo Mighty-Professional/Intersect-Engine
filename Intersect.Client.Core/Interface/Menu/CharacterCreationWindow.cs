@@ -53,6 +53,7 @@ public partial class CharacterCreationWindow : Window
     private readonly List<KeyValuePair<int, ClassSprite>> _femaleSprites = [];
     private readonly List<KeyValuePair<int, ClassSprite>> _maleSprites = [];
     private Button _backButton;
+    private IGameTexture? _pendingTexture;
 
 
     public CharacterCreationWindow(Canvas parent, MainMenu mainMenu, SelectCharacterWindow selectCharacterWindow) :
@@ -282,9 +283,24 @@ public partial class CharacterCreationWindow : Window
 
         var source = _genderMaleCheckbox.IsChecked ? _maleSprites[_displaySpriteIndex] : _femaleSprites[_displaySpriteIndex];
 
+        // Unsubscribe from any previous pending texture load
+        if (_pendingTexture != null)
+        {
+            _pendingTexture.Loaded -= OnPendingTextureLoaded;
+            _pendingTexture = null;
+        }
+
         var faceTexture = GameContentManager.Current.GetTexture(TextureType.Face, source.Value.Face);
         if (faceTexture != default)
         {
+            // If face texture hasn't loaded yet, wait for it
+            if (faceTexture.Width == 0 || faceTexture.Height == 0)
+            {
+                _pendingTexture = faceTexture;
+                _pendingTexture.Loaded += OnPendingTextureLoaded;
+                return;
+            }
+
             var faceLayer = _renderLayers[0];
             var faceScale = Math.Min(
                 _preview.InnerWidth / (double)faceTexture.Width,
@@ -348,6 +364,15 @@ public partial class CharacterCreationWindow : Window
             var layerTexture = paperdollContainer.Texture;
             if (layerTexture == default)
             {
+                paperdollContainer.Hide();
+                continue;
+            }
+
+            // If texture hasn't loaded yet (async), subscribe to reload display when ready
+            if (layerTexture.Width == 0 || layerTexture.Height == 0)
+            {
+                _pendingTexture = layerTexture;
+                _pendingTexture.Loaded += OnPendingTextureLoaded;
                 paperdollContainer.Hide();
                 continue;
             }
@@ -569,6 +594,13 @@ public partial class CharacterCreationWindow : Window
         }
 
         TryCreateCharacter();
+    }
+
+    private void OnPendingTextureLoaded(IAsset asset)
+    {
+        asset.Loaded -= OnPendingTextureLoaded;
+        _pendingTexture = null;
+        UpdateDisplay();
     }
 
     private void BackButton_Clicked(Base sender, MouseButtonState arguments)

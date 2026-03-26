@@ -19,6 +19,7 @@ public class WebContentManager : GameContentManager
     public WebContentManager(IJSRuntime js)
     {
         _js = js;
+        WebDebugLog.Log("CONTENT", "WebContentManager created");
     }
 
     public string AssetBaseUrl
@@ -109,6 +110,7 @@ public class WebContentManager : GameContentManager
         // Create and cache a new web texture
         var contentPath = TextureTypeToContentPath(type);
         var url = $"{_assetBaseUrl}/{contentPath}/{name}";
+        WebDebugLog.Log("CONTENT", $"GetTexture: type={type} name={name} url={url}");
         var texture = new WebTexture(_js, name, url);
         dict[key] = texture;
 
@@ -132,6 +134,7 @@ public class WebContentManager : GameContentManager
         {
             var path = GetContentPath(contentType);
             var url = $"{_assetBaseUrl}/{path}/{assetName}";
+            WebDebugLog.Log("CONTENT", $"Load<{typeof(TAsset).Name}>: {contentType}/{assetName} url={url}");
             var texture = new WebTexture(_js, assetName, url);
             lookup[assetName] = texture;
             _ = texture.LoadFromUrlAsync(url);
@@ -151,11 +154,12 @@ public class WebContentManager : GameContentManager
 
     public override void LoadTexturePacks()
     {
-        // Texture packs loaded on demand in web
+        WebDebugLog.Log("CONTENT", "LoadTexturePacks (no-op for web)");
     }
 
     public override void LoadTilesets(string[] tilesetnames)
     {
+        WebDebugLog.Log("CONTENT", $"LoadTilesets: {tilesetnames.Length} tilesets");
         foreach (var name in tilesetnames)
         {
             if (string.IsNullOrWhiteSpace(name)) continue;
@@ -185,6 +189,7 @@ public class WebContentManager : GameContentManager
 
     public override void LoadFonts()
     {
+        WebDebugLog.Log("CONTENT", "LoadFonts starting...");
         // Map of engine font names → web font file names
         // The engine expects specific font names (e.g. "sourcesansproblack")
         // but we serve them all from the same Source Sans Pro variable font
@@ -201,6 +206,7 @@ public class WebContentManager : GameContentManager
         {
             // Load font file from server via CSS FontFace API
             var url = $"{_assetBaseUrl}/fonts/{fileName}.ttf";
+            WebDebugLog.Log("CONTENT", $"LoadFont: {fontName} -> {url}");
             _ = LoadWebFontAsync(fontName, url);
 
             // Register in font dictionary so GetFont() works immediately
@@ -208,6 +214,7 @@ public class WebContentManager : GameContentManager
             var font = Core.Graphics.Renderer.LoadFont(fontName, new Dictionary<int, FileInfo>());
             mFontDict.TryAdd(fontName, font);
         }
+        WebDebugLog.Log("CONTENT", $"LoadFonts complete. {mFontDict.Count} fonts registered");
     }
 
     private async Task LoadWebFontAsync(string fontName, string url)
@@ -218,13 +225,13 @@ public class WebContentManager : GameContentManager
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to load web font '{fontName}': {ex.Message}");
+            WebDebugLog.Warn("CONTENT", $"Failed to load web font '{fontName}': {ex.Message}");
         }
     }
 
     public override void LoadShaders()
     {
-        // WebGL shaders are GLSL, loaded from JS side
+        WebDebugLog.Log("CONTENT", "LoadShaders (no-op for web)");
     }
 
     /// <summary>
@@ -237,6 +244,7 @@ public class WebContentManager : GameContentManager
         if (!skipCache && mUiDict.TryGetValue(key, out var rawLayout))
         {
             cacheHit = true;
+            WebDebugLog.Log("CONTENT", $"GetLayout cache hit: {stage}/{name} res={resolution}");
             return rawLayout;
         }
 
@@ -254,26 +262,38 @@ public class WebContentManager : GameContentManager
         }
         paths.Add($"{_assetBaseUrl}/gui/layouts/{stageName}/{name}.json");
 
+        WebDebugLog.Log("CONTENT", $"GetLayout: {stage}/{name} res={resolution}, trying {paths.Count} paths");
+
         foreach (var url in paths)
         {
             try
             {
                 var jsSync = _js as Microsoft.JSInterop.IJSInProcessRuntime;
-                if (jsSync == null) continue;
+                if (jsSync == null)
+                {
+                    WebDebugLog.Warn("CONTENT", "GetLayout: IJSInProcessRuntime is null!");
+                    continue;
+                }
 
                 var json = jsSync.Invoke<string?>("IntersectWebContent.fetchTextSync", url);
                 if (!string.IsNullOrWhiteSpace(json))
                 {
+                    WebDebugLog.Log("CONTENT", $"GetLayout OK: {url} ({json.Length} chars)");
                     mUiDict[key] = json;
                     return json;
                 }
+                else
+                {
+                    WebDebugLog.Log("CONTENT", $"GetLayout miss: {url} (null/empty)");
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // URL not found or fetch failed, try next
+                WebDebugLog.Log("CONTENT", $"GetLayout error: {url} -> {ex.GetType().Name}: {ex.Message}");
             }
         }
 
+        WebDebugLog.Warn("CONTENT", $"GetLayout FAILED: {stage}/{name} - no layout found for any path");
         return string.Empty;
     }
 

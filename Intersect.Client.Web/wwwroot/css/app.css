@@ -13,9 +13,19 @@ html, body {
     left: 0;
     width: 100vw;
     height: 100vh;
+    z-index: 0;
     cursor: default;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
+    visibility: hidden;
+}
+
+#display-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+    cursor: default;
 }
 
 #text-canvas {

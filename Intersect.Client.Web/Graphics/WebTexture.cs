@@ -99,10 +99,10 @@ public class WebTexture : IGameTexture
         return true;
     }
 
-    public object? GetTexture() => _platformTextureId;
+    public object? GetTexture() => _platformTextureId > 0 ? _platformTextureId : null;
 
     public TPlatformTexture? GetTexture<TPlatformTexture>() where TPlatformTexture : class
-        => _platformTextureId as object as TPlatformTexture;
+        => _platformTextureId > 0 ? _platformTextureId as object as TPlatformTexture : null;
 
     public void Reload()
     {
@@ -142,6 +142,7 @@ public class WebTexture : IGameTexture
 
     internal async Task LoadFromUrlAsync(string url)
     {
+        WebDebugLog.Log("TEXTURE", $"LoadAsync start: {Name} url={url}");
         try
         {
             var result = await _js.InvokeAsync<TextureLoadResult>(
@@ -150,11 +151,17 @@ public class WebTexture : IGameTexture
             _width = result.Width;
             _height = result.Height;
             _loaded = true;
+            WebDebugLog.Log("TEXTURE", $"LoadAsync OK: {Name} id={_platformTextureId} {_width}x{_height}");
             Loaded?.Invoke(this);
+        }
+        catch (JSException ex)
+        {
+            // Missing textures are expected (e.g. animation variants like _weapon, _shoot)
+            WebDebugLog.Log("TEXTURE", $"LoadAsync 404/fail: {Name} ({ex.Message})");
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to load texture '{Name}' from {url}: {ex.Message}");
+            WebDebugLog.Warn("TEXTURE", $"LoadAsync error: {Name} {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -164,6 +171,7 @@ public class WebTexture : IGameTexture
     internal void LoadFromUrlSync(string url)
     {
         if (_jsSync == null) return;
+        WebDebugLog.Log("TEXTURE", $"LoadSync start: {Name} url={url}");
         try
         {
             var result = _jsSync.Invoke<TextureLoadResult?>(
@@ -174,18 +182,18 @@ public class WebTexture : IGameTexture
                 _width = result.Width;
                 _height = result.Height;
                 _loaded = true;
+                WebDebugLog.Log("TEXTURE", $"LoadSync OK: {Name} id={_platformTextureId} {_width}x{_height}");
                 Loaded?.Invoke(this);
             }
             else
             {
-                Console.Error.WriteLine($"Sync load returned null for texture '{Name}' from {url}");
-                // Fall back to async
+                WebDebugLog.Warn("TEXTURE", $"LoadSync returned null: {Name} url={url}");
                 _ = LoadFromUrlAsync(url);
             }
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Sync load failed for texture '{Name}': {ex.Message}, falling back to async");
+            WebDebugLog.Warn("TEXTURE", $"LoadSync failed: {Name} {ex.Message}, falling back to async");
             _ = LoadFromUrlAsync(url);
         }
     }

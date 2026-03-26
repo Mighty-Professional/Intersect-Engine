@@ -675,6 +675,7 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
         var webSocketOptions = new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30),
+            ReceiveBufferSize = 256 * 1024, // 256KB buffer for large packets
         };
         // Allow any origin for web game client connections
         webSocketOptions.AllowedOrigins.Clear();
@@ -682,6 +683,8 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
         app.UseMiddleware<WebSocketMiddleware>();
 
         // Serve game client resources (textures, audio, fonts) at /resources
+        // CORS headers are added via OnPrepareResponse because the CORS middleware
+        // only applies to routed endpoints, not static files.
         var resourcesPath = Path.Combine(builder.Environment.ContentRootPath, "resources");
         if (Directory.Exists(resourcesPath))
         {
@@ -695,6 +698,10 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
                     HttpsCompression = HttpsCompressionMode.Compress,
                     RequestPath = "/resources",
                     ServeUnknownFileTypes = true,
+                    OnPrepareResponse = ctx =>
+                    {
+                        ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+                    },
                 }
             );
         }

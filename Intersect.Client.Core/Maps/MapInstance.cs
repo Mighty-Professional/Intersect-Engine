@@ -213,12 +213,17 @@ public partial class MapInstance : MapDescriptor, IGameObject<Guid, MapInstance>
         }
     }
 
+    private int _lastTilesetDimensionHash;
+    private readonly HashSet<IGameTexture> _usedTilesets = new();
+
     private void CacheTextures()
     {
         if (mTexturesFound || !GameContentManager.Current.TilesetsLoaded)
         {
             return;
         }
+
+        _usedTilesets.Clear();
 
         foreach (var layer in Options.Instance.Map.Layers.All)
         {
@@ -249,11 +254,37 @@ public partial class MapInstance : MapDescriptor, IGameObject<Guid, MapInstance>
 
                     // Tile is a struct, this has to be an array index
                     layerTiles[x, y].TilesetTexture = tilesetTexture;
+
+                    if (tilesetTexture != null)
+                    {
+                        _usedTilesets.Add(tilesetTexture);
+                    }
                 }
             }
         }
 
         mTexturesFound = true;
+    }
+
+    /// <summary>
+    /// Check if tileset textures have finished loading since VBOs were last built.
+    /// Only checks unique tilesets used by this map (O(tilesets) not O(tiles)).
+    /// </summary>
+    private bool CheckTilesetDimensionsChanged()
+    {
+        var hash = 0;
+        foreach (var tex in _usedTilesets)
+        {
+            hash = HashCode.Combine(hash, tex.Width, tex.Height);
+        }
+
+        if (hash != _lastTilesetDimensionHash)
+        {
+            _lastTilesetDimensionHash = hash;
+            return true;
+        }
+
+        return false;
     }
 
     //Updating
@@ -876,21 +907,45 @@ public partial class MapInstance : MapDescriptor, IGameObject<Guid, MapInstance>
     }
 
     //Rendering/Drawing Code
+    private static int _drawDiagCounter;
+    private static int _drawDiagInGameFrame;
     public void Draw(int layer) //Lower, Middle, Upper
     {
+        _drawDiagCounter++;
+        // Reset per in-game frame tracking (layer 0 = start of a new map draw cycle)
+        if (layer <= 0) _drawDiagInGameFrame++;
+        var shouldLog = _drawDiagInGameFrame <= 5;
+
         if (!IsLoaded)
         {
+            if (shouldLog)
+                Console.WriteLine($"[WEB:MAP] Draw SKIP: map not loaded, id={Id}, layer={layer}");
             return;
         }
 
         CacheTextures();
         if (!mTexturesFound)
         {
+            if (shouldLog)
+                Console.WriteLine($"[WEB:MAP] Draw SKIP: textures not found. TilesetsLoaded={Framework.File_Management.GameContentManager.Current?.TilesetsLoaded}, usedTilesets={_usedTilesets.Count}, layer={layer}, mapId={Id}");
             return;
+        }
+
+        if (shouldLog)
+        {
+            Console.WriteLine($"[WEB:MAP] Draw OK: mapId={Id}, layer={layer}, buffers={_tileBuffersPerLayer.Count}, usedTilesets={_usedTilesets.Count}");
+        }
+
+        // Rebuild VBOs when tileset textures finish async loading
+        // (their dimensions change from 0 to actual values)
+        if (_tileBuffersPerLayer.Count > 0 && CheckTilesetDimensionsChanged())
+        {
+            DestroyVBOs();
         }
 
         if (_tileBuffersPerLayer.Count < 1)
         {
+            CheckTilesetDimensionsChanged(); // Record current dimensions
             BuildVBOs();
         }
 

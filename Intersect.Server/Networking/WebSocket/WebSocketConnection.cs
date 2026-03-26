@@ -42,6 +42,13 @@ public sealed class WebSocketConnection : IConnection
             var data = packet.Data;
             if (data == null || data.Length == 0) return false;
 
+            // Log packet sizes for debugging (especially large packets like GameDataPacket)
+            var packetTypeName = packet.GetType().Name;
+            if (data.Length > 1000 || Statistics.SentPackets < 20)
+            {
+                Console.WriteLine($"[WS:SEND] {packetTypeName}: {data.Length} bytes to {Ip}");
+            }
+
             // Send synchronously (fire-and-forget async internally)
             _ = SendAsync(data);
 
@@ -49,8 +56,9 @@ public sealed class WebSocketConnection : IConnection
             Statistics.SentBytes += data.Length;
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"[WS:SEND] Failed to send {packet.GetType().Name}: {ex.Message}");
             return false;
         }
     }
@@ -110,7 +118,7 @@ public sealed class WebSocketConnection : IConnection
 
     private async Task ReceiveLoopAsync()
     {
-        var buffer = new byte[64 * 1024]; // 64KB receive buffer
+        var buffer = new byte[256 * 1024]; // 256KB receive buffer for large packets
         try
         {
             while (_socket.State == WebSocketState.Open && !_cts.IsCancellationRequested)

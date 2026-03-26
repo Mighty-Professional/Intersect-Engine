@@ -1,3 +1,5 @@
+using System.Linq;
+using Intersect.Client.Framework.Content;
 using Intersect.Client.Framework.Graphics;
 using Intersect.Client.General;
 using Intersect.Client.Maps;
@@ -19,6 +21,7 @@ internal static partial class Main
     private static long _animationTimer;
 
     private static bool _loadedTilesets;
+    private static int _tilesetRetryCount;
 
     internal static void Start(IClientContext context)
     {
@@ -174,11 +177,24 @@ internal static partial class Main
 
         if (!_loadedTilesets && Globals.HasGameData)
         {
-            Globals.ContentManager.LoadTilesets(TilesetDescriptor.GetNameList());
+            var tilesetNames = TilesetDescriptor.GetNameList();
+            var lookupCount = TilesetDescriptor.Lookup.Count;
+            Console.WriteLine($"[WEB:TILESET] ProcessLoading: Lookup has {lookupCount} entries, GetNameList returned {tilesetNames.Length} names");
+            if (tilesetNames.Length > 0)
+            {
+                Console.WriteLine($"[WEB:TILESET] First tileset: '{tilesetNames[0]}'");
+            }
+            Globals.ContentManager.LoadTilesets(tilesetNames);
             _loadedTilesets = true;
         }
 
-        Audio.PlayMusic(MapInstance.Get(Globals.Me.MapId).Music, ClientConfiguration.Instance.MusicFadeTimer, ClientConfiguration.Instance.MusicFadeTimer, true);
+        var currentMap = MapInstance.Get(Globals.Me.MapId);
+        if (currentMap == null)
+        {
+            return;
+        }
+
+        Audio.PlayMusic(currentMap.Music, ClientConfiguration.Instance.MusicFadeTimer, ClientConfiguration.Instance.MusicFadeTimer, true);
         Globals.GameState = GameStates.InGame;
         Fade.FadeIn(ClientConfiguration.Instance.FadeDurationMs);
     }
@@ -190,6 +206,32 @@ internal static partial class Main
             Logout(false);
             Globals.ConnectionLost = false;
             return;
+        }
+
+        // Safety: load tilesets if they weren't loaded during Loading phase
+        // (can happen if GameDataPacket arrives after entering InGame)
+        if (!_loadedTilesets && Globals.HasGameData)
+        {
+            var tilesetNames = TilesetDescriptor.GetNameList();
+            Console.WriteLine($"[WEB:TILESET] ProcessGame: Lookup has {TilesetDescriptor.Lookup.Count} entries, GetNameList returned {tilesetNames.Length} names");
+            Globals.ContentManager.LoadTilesets(tilesetNames);
+            _loadedTilesets = true;
+        }
+
+        // Retry tileset loading if we got 0 on the first try (packet deserialization race)
+        if (_loadedTilesets && _tilesetRetryCount < 10 && !Globals.ContentManager.TilesetsLoaded)
+        {
+            _tilesetRetryCount++;
+        }
+        if (_loadedTilesets && _tilesetRetryCount < 10)
+        {
+            var lookupCount = TilesetDescriptor.Lookup.Count;
+            if (lookupCount > 0 && Globals.ContentManager.GetTexture(Framework.Content.TextureType.Tileset, TilesetDescriptor.GetNameList().FirstOrDefault() ?? "") == null)
+            {
+                Console.WriteLine($"[WEB:TILESET] Retry #{_tilesetRetryCount}: Lookup now has {lookupCount} entries, reloading tilesets");
+                Globals.ContentManager.LoadTilesets(TilesetDescriptor.GetNameList());
+                _tilesetRetryCount = 10; // Stop retrying
+            }
         }
 
         //If we are waiting on maps, lets see if we have them

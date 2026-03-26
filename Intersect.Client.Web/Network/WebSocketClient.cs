@@ -152,15 +152,42 @@ public class WebSocketClient : GameSocket
             try
             {
                 var messageData = Convert.FromBase64String(message);
+                Console.WriteLine($"[WS:DESER] Received: {message.Length} b64 chars -> {messageData.Length} bytes");
                 var deserialized = MessagePacker.Instance.Deserialize(messageData);
                 if (deserialized is IntersectPacket intersectPacket)
                 {
+                    Console.WriteLine($"[WS:DESER] Packet type: {intersectPacket.GetType().Name}");
+
+                    // Detailed logging for GameDataPacket
+                    if (deserialized is Intersect.Network.Packets.Server.GameDataPacket gdp)
+                    {
+                        Console.WriteLine($"[WS:DESER] GameDataPacket: {gdp.GameObjects?.Length ?? -1} objects, ColorsJson={gdp.ColorsJson?.Length ?? -1} chars");
+                        if (gdp.GameObjects != null)
+                        {
+                            var typeCounts = new Dictionary<string, int>();
+                            foreach (var obj in gdp.GameObjects)
+                            {
+                                var key = obj.Type.ToString();
+                                typeCounts[key] = typeCounts.GetValueOrDefault(key) + 1;
+                            }
+                            foreach (var (type, count) in typeCounts)
+                            {
+                                Console.WriteLine($"[WS:DESER]   {type}: {count}");
+                            }
+                        }
+                    }
+
                     OnDataReceived(intersectPacket);
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[WS:DESER] Deserialized to non-IntersectPacket: {deserialized?.GetType().Name ?? "null"}");
                 }
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to deserialize packet ({message.Length} b64 chars): {ex.Message}");
+                Console.Error.WriteLine($"[WS:DESER] FAILED ({message.Length} b64 chars, ~{message.Length * 3 / 4} bytes): {ex.GetType().Name}: {ex.Message}");
+                Console.Error.WriteLine($"[WS:DESER] Stack: {ex.StackTrace?.Substring(0, Math.Min(500, ex.StackTrace?.Length ?? 0))}");
             }
         }
     }
