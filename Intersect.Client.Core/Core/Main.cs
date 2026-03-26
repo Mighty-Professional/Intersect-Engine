@@ -178,12 +178,6 @@ internal static partial class Main
         if (!_loadedTilesets && Globals.HasGameData)
         {
             var tilesetNames = TilesetDescriptor.GetNameList();
-            var lookupCount = TilesetDescriptor.Lookup.Count;
-            Console.WriteLine($"[WEB:TILESET] ProcessLoading: Lookup has {lookupCount} entries, GetNameList returned {tilesetNames.Length} names");
-            if (tilesetNames.Length > 0)
-            {
-                Console.WriteLine($"[WEB:TILESET] First tileset: '{tilesetNames[0]}'");
-            }
             Globals.ContentManager.LoadTilesets(tilesetNames);
             _loadedTilesets = true;
         }
@@ -212,25 +206,23 @@ internal static partial class Main
         // (can happen if GameDataPacket arrives after entering InGame)
         if (!_loadedTilesets && Globals.HasGameData)
         {
-            var tilesetNames = TilesetDescriptor.GetNameList();
-            Console.WriteLine($"[WEB:TILESET] ProcessGame: Lookup has {TilesetDescriptor.Lookup.Count} entries, GetNameList returned {tilesetNames.Length} names");
-            Globals.ContentManager.LoadTilesets(tilesetNames);
+            Globals.ContentManager.LoadTilesets(TilesetDescriptor.GetNameList());
             _loadedTilesets = true;
         }
 
-        // Retry tileset loading if we got 0 on the first try (packet deserialization race)
+        // Retry tileset loading if initial load found 0 tilesets (packet deserialization race)
         if (_loadedTilesets && _tilesetRetryCount < 10 && !Globals.ContentManager.TilesetsLoaded)
         {
             _tilesetRetryCount++;
-        }
-        if (_loadedTilesets && _tilesetRetryCount < 10)
-        {
             var lookupCount = TilesetDescriptor.Lookup.Count;
-            if (lookupCount > 0 && Globals.ContentManager.GetTexture(Framework.Content.TextureType.Tileset, TilesetDescriptor.GetNameList().FirstOrDefault() ?? "") == null)
+            if (lookupCount > 0)
             {
-                Console.WriteLine($"[WEB:TILESET] Retry #{_tilesetRetryCount}: Lookup now has {lookupCount} entries, reloading tilesets");
-                Globals.ContentManager.LoadTilesets(TilesetDescriptor.GetNameList());
-                _tilesetRetryCount = 10; // Stop retrying
+                var names = TilesetDescriptor.GetNameList();
+                if (names.Length > 0)
+                {
+                    Globals.ContentManager.LoadTilesets(names);
+                    _tilesetRetryCount = 10; // Stop retrying after successful reload
+                }
             }
         }
 

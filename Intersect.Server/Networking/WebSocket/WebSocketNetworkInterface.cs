@@ -18,7 +18,6 @@ public sealed class WebSocketNetworkInterface : INetworkLayerInterface
     private INetwork? _network;
     private readonly ConcurrentDictionary<Guid, WebSocketConnection> _connections = new();
     private readonly ConcurrentQueue<(WebSocketConnection Connection, byte[] Data)> _inboundQueue = new();
-    private bool _running;
 
     /// <summary>
     /// Attaches this interface to the server network.
@@ -170,13 +169,11 @@ public sealed class WebSocketNetworkInterface : INetworkLayerInterface
 
     public void Start()
     {
-        _running = true;
         ApplicationContext.Context.Value?.Logger.LogInformation("WebSocket network interface started.");
     }
 
     public void Stop(string reason = "stopping")
     {
-        _running = false;
         foreach (var connection in _connections.Values)
         {
             connection.Disconnect(reason);

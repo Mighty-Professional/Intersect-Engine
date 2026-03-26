@@ -49,6 +49,11 @@ public class WebTileBuffer : GameTileBuffer
         var u1 = (srcX + srcW) / tw;
         var v1 = (srcY + srcH) / th;
 
+        // Each tile uses 4 vertices; ensure we don't overflow uint index space
+        if (_tileCount >= int.MaxValue / 4)
+        {
+            return false;
+        }
         var vi = (uint)(_tileCount * 4);
 
         // Vertices: x, y, u, v, r, g, b, a

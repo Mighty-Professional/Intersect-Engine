@@ -23,7 +23,20 @@ public class WebClipboard : GameClipboard
     public override void SetText(string data)
     {
         _text = data;
-        _ = ((IJSRuntime)_js).InvokeVoidAsync("navigator.clipboard.writeText", data);
+        // Fire-and-forget clipboard write; clipboard API may fail if page doesn't have focus
+        _ = SetClipboardAsync(data);
+    }
+
+    private async Task SetClipboardAsync(string data)
+    {
+        try
+        {
+            await ((IJSRuntime)_js).InvokeVoidAsync("navigator.clipboard.writeText", data);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Clipboard write failed: {ex.Message}");
+        }
     }
 
     public override string GetText() => _text;

@@ -20,6 +20,7 @@ public class WebSocketClient : GameSocket
     private int _ping;
     private bool _connecting;
     private bool _statusCheckStarted;
+    private CancellationTokenSource? _pollCts;
 
     public WebSocketClient(IJSRuntime js, IClientContext context)
     {
@@ -40,8 +41,8 @@ public class WebSocketClient : GameSocket
         _connecting = true;
 
         // Determine WebSocket URL (use wss:// if page is served over https://)
-        var isSecure = _js.Invoke<bool>("eval", "location.protocol === 'https:'");
-        var protocol = isSecure ? "wss" : "ws";
+        var locationProtocol = _js.Invoke<string>("IntersectWebHelper.getLocationProtocol");
+        var protocol = locationProtocol == "https:" ? "wss" : "ws";
         var wsUrl = $"{protocol}://{host}:{port}/ws";
         Console.WriteLine($"WebSocket connecting to: {wsUrl}");
 
@@ -108,7 +109,8 @@ public class WebSocketClient : GameSocket
         if (!_statusCheckStarted)
         {
             _statusCheckStarted = true;
-            _ = PollServerStatusAsync();
+            _pollCts = new CancellationTokenSource();
+            _ = PollServerStatusAsync(_pollCts.Token);
         }
 
         if (!_connected && !_connecting) return;
@@ -151,32 +153,19 @@ public class WebSocketClient : GameSocket
 
             try
             {
-                var messageData = Convert.FromBase64String(message);
-                Console.WriteLine($"[WS:DESER] Received: {message.Length} b64 chars -> {messageData.Length} bytes");
+                byte[] messageData;
+                try
+                {
+                    messageData = Convert.FromBase64String(message);
+                }
+                catch (FormatException)
+                {
+                    Console.Error.WriteLine($"[WS:DESER] Invalid base64 data ({message.Length} chars), skipping");
+                    continue;
+                }
                 var deserialized = MessagePacker.Instance.Deserialize(messageData);
                 if (deserialized is IntersectPacket intersectPacket)
                 {
-                    Console.WriteLine($"[WS:DESER] Packet type: {intersectPacket.GetType().Name}");
-
-                    // Detailed logging for GameDataPacket
-                    if (deserialized is Intersect.Network.Packets.Server.GameDataPacket gdp)
-                    {
-                        Console.WriteLine($"[WS:DESER] GameDataPacket: {gdp.GameObjects?.Length ?? -1} objects, ColorsJson={gdp.ColorsJson?.Length ?? -1} chars");
-                        if (gdp.GameObjects != null)
-                        {
-                            var typeCounts = new Dictionary<string, int>();
-                            foreach (var obj in gdp.GameObjects)
-                            {
-                                var key = obj.Type.ToString();
-                                typeCounts[key] = typeCounts.GetValueOrDefault(key) + 1;
-                            }
-                            foreach (var (type, count) in typeCounts)
-                            {
-                                Console.WriteLine($"[WS:DESER]   {type}: {count}");
-                            }
-                        }
-                    }
-
                     OnDataReceived(intersectPacket);
                 }
                 else
@@ -212,6 +201,9 @@ public class WebSocketClient : GameSocket
 
     public override void Dispose()
     {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
         Disconnect("disposed");
     }
 
@@ -219,32 +211,41 @@ public class WebSocketClient : GameSocket
     /// Polls the server's REST API to determine if it's online.
     /// Replaces LiteNetLib unconnected UDP packets which aren't available over WebSocket.
     /// </summary>
-    private async Task PollServerStatusAsync()
+    private async Task PollServerStatusAsync(CancellationToken ct)
     {
         var host = ClientConfiguration.Instance.Host;
         var port = ClientConfiguration.Instance.Port;
 
-        // Determine the API URL — use the same host/port as the game server
-        // since Kestrel serves both HTTP API and WebSocket on the same port
-        var isSecure = _js.Invoke<bool>("eval", "location.protocol === 'https:'");
-        var scheme = isSecure ? "https" : "http";
+        var locationProtocol = _js.Invoke<string>("IntersectWebHelper.getLocationProtocol");
+        var scheme = locationProtocol == "https:" ? "https" : "http";
         var apiUrl = $"{scheme}://{host}:{port}/api/v1/info";
 
-        while (true)
+        while (!ct.IsCancellationRequested)
         {
             try
             {
                 var isOnline = await ((IJSRuntime)_js).InvokeAsync<bool>(
-                    "IntersectWebSocket.checkServerStatus", apiUrl);
+                    "IntersectWebSocket.checkServerStatus", ct, apiUrl);
 
                 MainMenu.SetNetworkStatus(isOnline ? NetworkStatus.Online : NetworkStatus.Offline);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
             catch
             {
                 MainMenu.SetNetworkStatus(NetworkStatus.Offline);
             }
 
-            await Task.Delay(5000);
+            try
+            {
+                await Task.Delay(5000, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
     }
 }

@@ -17,7 +17,7 @@ public sealed class WebSocketMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (context.Request.Path != "/ws" || !context.WebSockets.IsWebSocketRequest)
+        if (!context.Request.Path.Equals("/ws", StringComparison.OrdinalIgnoreCase) || !context.WebSockets.IsWebSocketRequest)
         {
             await _next(context);
             return;
@@ -42,20 +42,30 @@ public sealed class WebSocketMiddleware
             return;
         }
 
-        // Keep the middleware alive while the WebSocket connection is open
-        // The receive loop runs inside WebSocketConnection.HandleConnected()
+        // Keep the middleware alive while the WebSocket connection is open.
+        // The receive loop runs inside WebSocketConnection.HandleConnected().
+        // Use a timeout on the polling to avoid hanging if the connection dies abnormally.
         var tcs = new TaskCompletionSource();
 
-        // Monitor socket state
         _ = Task.Run(async () =>
         {
-            while (connection.IsConnected)
+            try
             {
-                await Task.Delay(1000);
+                while (connection.IsConnected)
+                {
+                    await Task.Delay(1000);
+                }
+            }
+            catch
+            {
+                // Ensure we always complete the TCS
             }
             tcs.TrySetResult();
         });
 
+        // Don't hang forever - if the connection doesn't close cleanly within 10 minutes, release
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        cts.Token.Register(() => tcs.TrySetResult());
         await tcs.Task;
     }
 }

@@ -120,15 +120,22 @@ public partial class WebRenderer : GameRenderer
             _lastFpsTime = now;
         }
 
-        // Prune text cache
+        // Prune text cache using LRU eviction when over capacity
         if (_textCache.Count > TextCacheMaxSize)
         {
-            var cutoff = Environment.TickCount64 - 5000;
-            var stale = _textCache.Where(kv => kv.Value.lastUsed < cutoff).Select(kv => kv.Key).ToList();
-            foreach (var key in stale)
+            var evictCount = _textCache.Count - TextCacheMaxSize + TextCacheMaxSize / 4; // Evict 25% extra to avoid thrashing
+            var toEvict = _textCache
+                .OrderBy(kv => kv.Value.lastUsed)
+                .Take(evictCount)
+                .Select(kv => kv.Key)
+                .ToList();
+            foreach (var key in toEvict)
             {
-                _js.InvokeVoid("IntersectWebGL.deleteTexture", _textCache[key].textureId);
-                _textCache.Remove(key);
+                if (_textCache.TryGetValue(key, out var entry))
+                {
+                    _js.InvokeVoid("IntersectWebGL.deleteTexture", entry.textureId);
+                    _textCache.Remove(key);
+                }
             }
         }
     }
@@ -251,9 +258,9 @@ public partial class WebRenderer : GameRenderer
             blendModeInt);
 
         // Unbind render target after drawing to it
-        if (renderTarget is WebRenderTexture destRt2)
+        if (renderTarget is WebRenderTexture)
         {
-            destRt2.End();
+            ((WebRenderTexture)renderTarget).End();
         }
     }
 

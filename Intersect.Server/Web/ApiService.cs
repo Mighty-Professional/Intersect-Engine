@@ -117,11 +117,14 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
                 }
 
                 // Default policy for web game client — allows any origin to access
-                // resources and WebSocket endpoints needed by the browser client
+                // game resources and API endpoints needed by the browser client.
+                // This is intentionally permissive because game clients may be served
+                // from different origins (e.g. CDN, dev server) than the game server.
+                // Authentication is handled via game-level packets, not cookies/tokens.
                 options.AddDefaultPolicy(
                     policy => policy
                         .AllowAnyOrigin()
-                        .AllowAnyMethod()
+                        .WithMethods("GET", "POST", "OPTIONS")
                         .AllowAnyHeader()
                 );
             }
@@ -675,7 +678,6 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
         var webSocketOptions = new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30),
-            ReceiveBufferSize = 256 * 1024, // 256KB buffer for large packets
         };
         // Allow any origin for web game client connections
         webSocketOptions.AllowedOrigins.Clear();

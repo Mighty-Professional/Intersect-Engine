@@ -9,9 +9,12 @@ namespace Intersect.Server.Networking.WebSocket;
 /// </summary>
 public sealed class WebSocketConnection : IConnection
 {
+    private const int ReceiveBufferSize = 256 * 1024; // 256KB for large game packets
+
     private readonly System.Net.WebSockets.WebSocket _socket;
     private readonly WebSocketNetworkInterface _interface;
     private readonly CancellationTokenSource _cts = new();
+    private int _disposed;
 
     public WebSocketConnection(
         System.Net.WebSockets.WebSocket socket,
@@ -42,14 +45,7 @@ public sealed class WebSocketConnection : IConnection
             var data = packet.Data;
             if (data == null || data.Length == 0) return false;
 
-            // Log packet sizes for debugging (especially large packets like GameDataPacket)
-            var packetTypeName = packet.GetType().Name;
-            if (data.Length > 1000 || Statistics.SentPackets < 20)
-            {
-                Console.WriteLine($"[WS:SEND] {packetTypeName}: {data.Length} bytes to {Ip}");
-            }
-
-            // Send synchronously (fire-and-forget async internally)
+            // Send asynchronously (fire-and-forget)
             _ = SendAsync(data);
 
             Statistics.SentPackets++;
@@ -118,7 +114,7 @@ public sealed class WebSocketConnection : IConnection
 
     private async Task ReceiveLoopAsync()
     {
-        var buffer = new byte[256 * 1024]; // 256KB receive buffer for large packets
+        var buffer = new byte[ReceiveBufferSize];
         try
         {
             while (_socket.State == WebSocketState.Open && !_cts.IsCancellationRequested)
@@ -162,6 +158,7 @@ public sealed class WebSocketConnection : IConnection
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _cts.Cancel();
         _cts.Dispose();
         _socket.Dispose();

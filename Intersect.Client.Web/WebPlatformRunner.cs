@@ -71,7 +71,8 @@ public class WebPlatformRunner : IPlatformRunner
         // Set asset base URL to the game server's HTTP endpoint.
         // The web client may be served from a different origin (e.g. Blazor dev server on :5000)
         // but resources are served by the game server (e.g. :5400).
-        var isSecure = js.Invoke<bool>("eval", "location.protocol === 'https:'");
+        var protocol = js.Invoke<string>("IntersectWebHelper.getLocationProtocol");
+        var isSecure = protocol == "https:";
         var httpProtocol = isSecure ? "https" : "http";
         var host = ClientConfiguration.Instance.Host;
         var port = ClientConfiguration.Instance.Port;
@@ -127,13 +128,15 @@ public class WebPlatformRunner : IPlatformRunner
     {
         if (_autoLoginState == 0)
         {
-            var param = js.Invoke<string?>("eval", "new URLSearchParams(location.search).get('autologin')");
+            var param = js.Invoke<string?>("IntersectWebHelper.getQueryParam", "autologin");
             if (string.IsNullOrEmpty(param)) { _autoLoginState = -1; return; }
-            var parts = param.Split(':');
-            if (parts.Length != 2) { _autoLoginState = -1; return; }
-            _autoUser = parts[0];
-            _autoPass = parts[1];
+            var sepIndex = param.IndexOf(':');
+            if (sepIndex <= 0 || sepIndex == param.Length - 1) { _autoLoginState = -1; return; }
+            _autoUser = param[..sepIndex];
+            _autoPass = param[(sepIndex + 1)..];
             _autoLoginState = 1;
+            // Clear the autologin parameter from the URL to avoid credential leakage in browser history
+            js.InvokeVoid("IntersectWebHelper.clearQueryParam", "autologin");
         }
         else if (_autoLoginState == 1)
         {
