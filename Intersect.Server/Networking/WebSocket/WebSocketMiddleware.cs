@@ -44,7 +44,6 @@ public sealed class WebSocketMiddleware
 
         // Keep the middleware alive while the WebSocket connection is open.
         // The receive loop runs inside WebSocketConnection.HandleConnected().
-        // Use a timeout on the polling to avoid hanging if the connection dies abnormally.
         var tcs = new TaskCompletionSource();
 
         _ = Task.Run(async () =>
@@ -63,9 +62,6 @@ public sealed class WebSocketMiddleware
             tcs.TrySetResult();
         });
 
-        // Don't hang forever - if the connection doesn't close cleanly within 10 minutes, release
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
-        cts.Token.Register(() => tcs.TrySetResult());
         await tcs.Task;
     }
 }

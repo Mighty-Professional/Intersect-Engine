@@ -465,36 +465,22 @@ public partial class TexturedBase : Skin.Base
     {
         _texture = texture ?? throw new ArgumentNullException(nameof(texture));
 
-        Console.WriteLine($"[SKIN_INIT] TexturedBase ctor: texture={texture.Name} loaded={texture.IsLoaded} {texture.Width}x{texture.Height}");
-
         // If the texture is already loaded (e.g., synchronous load), initialize immediately
         if (texture.Width > 0 && texture.Height > 0)
         {
-            Console.WriteLine("[SKIN_INIT] Texture already loaded — initializing immediately");
             InitializeColors();
             InitializeTextures();
         }
 
         texture.Loaded += OnTextureLoaded;
         texture.Reload();
-        Console.WriteLine($"[SKIN_INIT] Subscribed to Loaded event, called Reload(). SkinReady subscribers={(SkinReady?.GetInvocationList()?.Length ?? 0)}");
     }
 
     private void OnTextureLoaded(IAsset asset)
     {
-        try
-        {
-            Console.WriteLine($"[SKIN_INIT] OnTextureLoaded fired! texture={asset} — initializing colors/textures");
-            InitializeColors();
-            InitializeTextures();
-            Console.WriteLine($"[SKIN_INIT] Colors/textures initialized. Firing SkinReady to {SkinReady?.GetInvocationList()?.Length ?? 0} subscribers");
-            SkinReady?.Invoke();
-            Console.WriteLine("[SKIN_INIT] SkinReady complete");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[SKIN_INIT] EXCEPTION in OnTextureLoaded: {ex}");
-        }
+        InitializeColors();
+        InitializeTextures();
+        SkinReady?.Invoke();
     }
 
     public TexturedBase(Renderer.Base renderer, GameContentManager contentManager)

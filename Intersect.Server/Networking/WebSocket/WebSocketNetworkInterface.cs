@@ -142,9 +142,20 @@ public sealed class WebSocketNetworkInterface : INetworkLayerInterface
             return wsConnection.Send(packet, transmissionMode);
         }
 
-        // If no specific connection, try first WebSocket connection
-        var firstConnection = _connections.Values.FirstOrDefault();
-        return firstConnection?.Send(packet, transmissionMode) ?? false;
+        if (connection == null)
+        {
+            // Broadcast to all WebSocket connections
+            var success = true;
+            foreach (var conn in _connections.Values)
+            {
+                if (!conn.Send(packet, transmissionMode))
+                    success = false;
+            }
+            return success;
+        }
+
+        // Non-WebSocket connection type — not handled by this interface
+        return false;
     }
 
     public bool SendPacket(

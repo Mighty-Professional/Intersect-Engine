@@ -770,28 +770,6 @@ public static partial class PacketSender
         }
 
         CachedGameDataPacket = new GameDataPacket(gameObjects.ToArray(), CustomColors.Json());
-
-        // Log the cached packet details for debugging web client issues
-        var typeCounts = new Dictionary<string, int>();
-        foreach (var obj in gameObjects)
-        {
-            var key = obj.Type.ToString();
-            typeCounts[key] = typeCounts.GetValueOrDefault(key) + 1;
-        }
-        Console.WriteLine($"[GAMEDATA] CacheGameDataPacket: {gameObjects.Count} total objects");
-        foreach (var (type, count) in typeCounts)
-        {
-            Console.WriteLine($"[GAMEDATA]   {type}: {count}");
-        }
-        try
-        {
-            var serializedSize = CachedGameDataPacket.Data.Length;
-            Console.WriteLine($"[GAMEDATA] Serialized size: {serializedSize} bytes");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[GAMEDATA] Serialization failed: {ex.Message}");
-        }
     }
 
     /// <summary>

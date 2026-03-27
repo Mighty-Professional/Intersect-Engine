@@ -19,8 +19,6 @@ public class CaseInsensitiveFileProvider : IFileProvider
         _inner = new PhysicalFileProvider(root, Microsoft.Extensions.FileProviders.Physical.ExclusionFilters.Sensitive);
     }
 
-    private int _logCount;
-
     public IFileInfo GetFileInfo(string subpath)
     {
         // Try exact match first (fast path)
@@ -35,19 +33,12 @@ public class CaseInsensitiveFileProvider : IFileProvider
         if (resolvedPath != null)
         {
             var resolved = _inner.GetFileInfo(resolvedPath);
-            if (resolved.Exists && _logCount < 100)
+            if (resolved.Exists)
             {
-                _logCount++;
-                Console.WriteLine($"[FILESERVE] Case-insensitive resolve: '{subpath}' -> '{resolvedPath}' ({resolved.Length} bytes)");
+                return resolved;
             }
-            return resolved;
         }
 
-        if (_logCount < 100)
-        {
-            _logCount++;
-            Console.WriteLine($"[FILESERVE] NOT FOUND (even case-insensitive): '{subpath}'");
-        }
         return result; // Return the not-found result
     }
 
@@ -68,8 +59,12 @@ public class CaseInsensitiveFileProvider : IFileProvider
         var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0) return null;
 
+        // Reject path traversal attempts
+        if (segments.Any(s => s == ".." || s == ".")) return null;
+
         var currentDir = _root;
         var resolvedParts = new List<string>();
+        var rootFull = Path.GetFullPath(_root);
 
         for (var i = 0; i < segments.Length; i++)
         {
@@ -90,6 +85,10 @@ public class CaseInsensitiveFileProvider : IFileProvider
 
                 resolvedParts.Add(match);
                 currentDir = Path.Combine(currentDir, match);
+
+                // Verify resolved path is still within root
+                if (!Path.GetFullPath(currentDir).StartsWith(rootFull, StringComparison.Ordinal))
+                    return null;
             }
             catch
             {

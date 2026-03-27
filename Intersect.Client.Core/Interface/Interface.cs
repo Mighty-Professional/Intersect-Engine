@@ -200,13 +200,11 @@ public static partial class Interface
             // re-render with the now-correct skin colors and textures.
             _skin.SkinReady += () =>
             {
-                Console.WriteLine("[SKIN_READY] Skin texture loaded — flushing text cache and invalidating controls");
                 Graphics.Renderer?.FlushTextCache();
                 _canvasMainMenu?.Invalidate();
                 _canvasMainMenu?.InvalidateChildren(recursive: true);
                 _canvasInGame?.Invalidate();
                 _canvasInGame?.InvalidateChildren(recursive: true);
-                Console.WriteLine($"[SKIN_READY] Done. GameState={Globals.GameState} mainMenu={_canvasMainMenu != null} inGame={_canvasInGame != null}");
             };
         }
 

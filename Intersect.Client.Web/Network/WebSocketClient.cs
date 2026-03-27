@@ -14,6 +14,8 @@ namespace Intersect.Client.Web.Network;
 /// </summary>
 public class WebSocketClient : GameSocket
 {
+    private const int MaxBase64MessageLength = 2 * 1024 * 1024; // ~1.5MB decoded
+
     private readonly IJSInProcessRuntime _js;
     private readonly IClientContext _context;
     private bool _connected;
@@ -148,6 +150,12 @@ public class WebSocketClient : GameSocket
                     _connected = false;
                     OnDisconnected(null!, new ConnectionEventArgs());
                 }
+                continue;
+            }
+
+            if (message.Length > MaxBase64MessageLength)
+            {
+                Console.Error.WriteLine($"[WS:DESER] Message too large ({message.Length} chars), skipping");
                 continue;
             }
 

@@ -31,14 +31,8 @@ public static class GameBootstrap
         // Store JS runtime for WebPlatformRunner (will be discovered via assembly scanning)
         WebPlatformRunner.JsRuntime = jsSync;
 
-        // Register JS-callable debug toggle: IntersectDebug.enable() / IntersectDebug.disable()
-        await jsRuntime.InvokeVoidAsync("eval", @"
-            window.IntersectDebug = {
-                enable()  { DotNet.invokeMethod('Intersect Client Web', 'SetDebugLogging', true);  console.log('Debug logging enabled'); },
-                disable() { DotNet.invokeMethod('Intersect Client Web', 'SetDebugLogging', false); console.log('Debug logging disabled'); },
-                status()  { return DotNet.invokeMethod('Intersect Client Web', 'GetDebugLogging'); }
-            };
-        ");
+        // Register JS-callable debug toggle
+        await jsRuntime.InvokeVoidAsync("IntersectWebHelper.registerDebugToggle");
 
         Console.WriteLine($"Intersect Web Client initialized. Canvas: {canvasSize.Width}x{canvasSize.Height}");
         Console.WriteLine("Debug logging is ON. Disable with: IntersectDebug.disable()");

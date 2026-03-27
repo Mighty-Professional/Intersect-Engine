@@ -907,33 +907,17 @@ public partial class MapInstance : MapDescriptor, IGameObject<Guid, MapInstance>
     }
 
     //Rendering/Drawing Code
-    private static int _drawDiagCounter;
-    private static int _drawDiagInGameFrame;
     public void Draw(int layer) //Lower, Middle, Upper
     {
-        _drawDiagCounter++;
-        // Reset per in-game frame tracking (layer 0 = start of a new map draw cycle)
-        if (layer <= 0) _drawDiagInGameFrame++;
-        var shouldLog = _drawDiagInGameFrame <= 5;
-
         if (!IsLoaded)
         {
-            if (shouldLog)
-                Console.WriteLine($"[WEB:MAP] Draw SKIP: map not loaded, id={Id}, layer={layer}");
             return;
         }
 
         CacheTextures();
         if (!mTexturesFound)
         {
-            if (shouldLog)
-                Console.WriteLine($"[WEB:MAP] Draw SKIP: textures not found. TilesetsLoaded={Framework.File_Management.GameContentManager.Current?.TilesetsLoaded}, usedTilesets={_usedTilesets.Count}, layer={layer}, mapId={Id}");
             return;
-        }
-
-        if (shouldLog)
-        {
-            Console.WriteLine($"[WEB:MAP] Draw OK: mapId={Id}, layer={layer}, buffers={_tileBuffersPerLayer.Count}, usedTilesets={_usedTilesets.Count}");
         }
 
         // Rebuild VBOs when tileset textures finish async loading

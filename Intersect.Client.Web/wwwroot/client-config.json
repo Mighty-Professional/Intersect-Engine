@@ -1,4 +1,4 @@
 {
-  "Host": "intersect-engine.fly.dev",
-  "Port": 443
+  "Host": "localhost",
+  "Port": 5400
 }

@@ -12,5 +12,13 @@ window.IntersectWebHelper = {
         const url = new URL(location.href);
         url.searchParams.delete(name);
         history.replaceState(null, '', url.toString());
+    },
+
+    registerDebugToggle() {
+        window.IntersectDebug = {
+            enable()  { DotNet.invokeMethod('Intersect Client Web', 'SetDebugLogging', true);  console.log('Debug logging enabled'); },
+            disable() { DotNet.invokeMethod('Intersect Client Web', 'SetDebugLogging', false); console.log('Debug logging disabled'); },
+            status()  { return DotNet.invokeMethod('Intersect Client Web', 'GetDebugLogging'); }
+        };
     }
 };

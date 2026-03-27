@@ -31,9 +31,13 @@ public class WebPlatformRunner : IPlatformRunner
     private IClientContext? _context;
     private bool _initialized;
     private DateTime _lastFrameTime;
+#if DEBUG
     private int _autoLoginState;
     private string? _autoUser;
     private string? _autoPass;
+#else
+    private readonly int _autoLoginState = -1;
+#endif
     private int _consecutiveErrors;
     private string? _lastErrorMessage;
     private int _frameNumber;
@@ -128,6 +132,7 @@ public class WebPlatformRunner : IPlatformRunner
         }
     }
 
+#if DEBUG
     private void ProcessAutoLogin(IJSInProcessRuntime js)
     {
         if (_autoLoginState == 0)
@@ -139,7 +144,6 @@ public class WebPlatformRunner : IPlatformRunner
             _autoUser = param[..sepIndex];
             _autoPass = param[(sepIndex + 1)..];
             _autoLoginState = 1;
-            // Clear the autologin parameter from the URL to avoid credential leakage in browser history
             js.InvokeVoid("IntersectWebHelper.clearQueryParam", "autologin");
         }
         else if (_autoLoginState == 1)
@@ -171,6 +175,7 @@ public class WebPlatformRunner : IPlatformRunner
             catch { _autoLoginState = -1; }
         }
     }
+#endif
 
     private async Task RunFrameLoopAsync(IJSInProcessRuntime js)
     {
@@ -192,8 +197,10 @@ public class WebPlatformRunner : IPlatformRunner
 
             try
             {
-                // Auto-login for testing (?autologin=user:pass)
+#if DEBUG
+                // Auto-login for testing (?autologin=user:pass) — DEBUG only
                 if (_autoLoginState >= 0) ProcessAutoLogin(js);
+#endif
 
                 // Update input state (synchronous in WASM)
                 js.InvokeVoid("IntersectInput.update");
@@ -225,8 +232,8 @@ public class WebPlatformRunner : IPlatformRunner
                 LogFrameError("Render", ex);
             }
 
-            // Yield to browser so it can paint the canvas
-            await Task.Delay(1);
+            // Yield to browser's vsync via requestAnimationFrame
+            await ((IJSRuntime)js).InvokeAsync<object>("IntersectWebGL.waitForNextFrame");
         }
         WebDebugLog.Log("LOOP", $"Frame loop exited. _initialized={_initialized}, IsRunning={Globals.IsRunning}");
     }

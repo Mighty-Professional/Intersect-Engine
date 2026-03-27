@@ -702,6 +702,11 @@ public abstract partial class GameRenderer : IGameRenderer, ITextHelper
     /// </summary>
     public virtual void RestoreView() { }
 
+    /// <summary>
+    /// Called each frame with the current game state. Override to react to state changes.
+    /// </summary>
+    public virtual void OnGameStateChanged(bool inGame) { }
+
     public abstract GameShader LoadShader(string shaderName);
 
     private bool ScreenshotOrRequestExistsFor(string pathToScreenshotFile)

@@ -81,8 +81,8 @@ public partial class WebRenderer : GameRenderer
         return true;
     }
 
-    /// <summary>Called from the game loop to signal we're in a specific game state for logging.</summary>
-    public void SetInGameMode(bool inGame)
+    /// <inheritdoc />
+    public override void OnGameStateChanged(bool inGame)
     {
         if (inGame && !_inGameMode)
         {

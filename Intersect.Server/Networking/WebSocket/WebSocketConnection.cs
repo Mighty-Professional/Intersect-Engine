@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Threading.Channels;
 using Intersect.Network;
 
 namespace Intersect.Server.Networking.WebSocket;
@@ -10,11 +11,20 @@ namespace Intersect.Server.Networking.WebSocket;
 public sealed class WebSocketConnection : IConnection
 {
     private const int ReceiveBufferSize = 256 * 1024; // 256KB for large game packets
+    private const int MaxMessageSize = 1024 * 1024; // 1MB max inbound message size
+    private const int SendQueueCapacity = 1024;
 
     private readonly System.Net.WebSockets.WebSocket _socket;
     private readonly WebSocketNetworkInterface _interface;
     private readonly CancellationTokenSource _cts = new();
+    private readonly Channel<byte[]> _sendChannel = Channel.CreateBounded<byte[]>(
+        new BoundedChannelOptions(SendQueueCapacity)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+        });
     private int _disposed;
+    private int _disconnected;
 
     public WebSocketConnection(
         System.Net.WebSockets.WebSocket socket,
@@ -45,8 +55,10 @@ public sealed class WebSocketConnection : IConnection
             var data = packet.Data;
             if (data == null || data.Length == 0) return false;
 
-            // Send asynchronously (fire-and-forget)
-            _ = SendAsync(data);
+            if (!_sendChannel.Writer.TryWrite(data))
+            {
+                return false;
+            }
 
             Statistics.SentPackets++;
             Statistics.SentBytes += data.Length;
@@ -54,32 +66,38 @@ public sealed class WebSocketConnection : IConnection
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[WS:SEND] Failed to send {packet.GetType().Name}: {ex.Message}");
+            Console.Error.WriteLine($"[WS:SEND] Failed to enqueue {packet.GetType().Name}: {ex.Message}");
             return false;
         }
     }
 
-    private async Task SendAsync(byte[] data)
+    private async Task SendLoopAsync()
     {
         try
         {
-            await _socket.SendAsync(
-                new ArraySegment<byte>(data),
-                WebSocketMessageType.Binary,
-                endOfMessage: true,
-                _cts.Token
-            );
+            await foreach (var data in _sendChannel.Reader.ReadAllAsync(_cts.Token))
+            {
+                await _socket.SendAsync(
+                    new ArraySegment<byte>(data),
+                    WebSocketMessageType.Binary,
+                    endOfMessage: true,
+                    _cts.Token
+                );
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal shutdown
         }
         catch (Exception)
         {
-            // Connection closed during send
             Disconnect("Send failed");
         }
     }
 
     public void HandleConnected()
     {
-        // Start the receive loop
+        _ = SendLoopAsync();
         _ = ReceiveLoopAsync();
     }
 
@@ -92,6 +110,10 @@ public sealed class WebSocketConnection : IConnection
 
     public void Disconnect(string? message = default)
     {
+        if (Interlocked.Exchange(ref _disconnected, 1) != 0) return;
+
+        _sendChannel.Writer.TryComplete();
+
         if (_socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
         {
             try
@@ -136,6 +158,12 @@ public sealed class WebSocketConnection : IConnection
                     }
 
                     ms.Write(buffer, 0, result.Count);
+
+                    if (ms.Length > MaxMessageSize)
+                    {
+                        Disconnect("Message too large");
+                        return;
+                    }
                 } while (!result.EndOfMessage);
 
                 if (result.MessageType == WebSocketMessageType.Binary && ms.Length > 0)
