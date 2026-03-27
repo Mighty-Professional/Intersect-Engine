@@ -690,6 +690,18 @@ public abstract partial class GameRenderer : IGameRenderer, ITextHelper
 
     public abstract void Close();
 
+    /// <summary>
+    /// Flush any cached text rendering data. Called when the GWEN skin texture finishes
+    /// loading asynchronously, to discard text rendered with uninitialized colors.
+    /// </summary>
+    public virtual void FlushTextCache() { }
+
+    /// <summary>
+    /// Re-apply the current view/projection. Called after framebuffer rendering
+    /// to restore the view that was overwritten by the framebuffer's local projection.
+    /// </summary>
+    public virtual void RestoreView() { }
+
     public abstract GameShader LoadShader(string shaderName);
 
     private bool ScreenshotOrRequestExistsFor(string pathToScreenshotFile)

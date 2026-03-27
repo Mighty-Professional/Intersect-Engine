@@ -14,9 +14,11 @@ window.IntersectInput = (() => {
     let mouseEventQueue = [];
     // Queue of key events: { type: 'down'|'up', key: int }
     let keyEventQueue = [];
+    // Queued key state changes — applied in update() so prev/current are one frame apart
+    let keyStateQueue = [];
+    let mouseStateQueue = [];
 
     // DOM key code → Intersect Keys enum mapping
-    // This maps standard DOM key codes to the Intersect Keys enum values
     const keyMap = {
         'KeyA': 65, 'KeyB': 66, 'KeyC': 67, 'KeyD': 68, 'KeyE': 69,
         'KeyF': 70, 'KeyG': 71, 'KeyH': 72, 'KeyI': 73, 'KeyJ': 74,
@@ -63,11 +65,12 @@ window.IntersectInput = (() => {
             canvas.addEventListener('keydown', (e) => {
                 const key = keyMap[e.code];
                 if (key !== undefined) {
-                    keysDown.add(key);
+                    // Queue state change — applied in update() so IsJustPressed works
+                    keyStateQueue.push({ type: 'down', key });
                     keyEventQueue.push({ type: 'down', key });
                 }
-                // Prevent default for game keys (arrows, space, tab, backspace, etc.)
-                if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','Tab','Backspace'].includes(e.code)) {
+                // Prevent default for game keys (arrows, space, tab, backspace, enter, escape)
+                if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','Tab','Backspace','Enter','Escape'].includes(e.code)) {
                     e.preventDefault();
                 }
             });
@@ -75,7 +78,7 @@ window.IntersectInput = (() => {
             canvas.addEventListener('keyup', (e) => {
                 const key = keyMap[e.code];
                 if (key !== undefined) {
-                    keysDown.delete(key);
+                    keyStateQueue.push({ type: 'up', key });
                     keyEventQueue.push({ type: 'up', key });
                 }
             });
@@ -89,20 +92,19 @@ window.IntersectInput = (() => {
             canvas.addEventListener('mousedown', (e) => {
                 const btn = mouseButtonMap[e.button];
                 if (btn !== undefined) {
-                    mouseButtons.add(btn);
+                    mouseStateQueue.push({ type: 'down', button: btn });
                     const rect = canvas.getBoundingClientRect();
                     mouseEventQueue.push({ type: 'down', button: btn, x: e.clientX - rect.left, y: e.clientY - rect.top });
                 }
                 e.preventDefault();
                 canvas.focus();
-                // Resume audio on user interaction
                 if (window.IntersectAudio) window.IntersectAudio.resume();
             });
 
             canvas.addEventListener('mouseup', (e) => {
                 const btn = mouseButtonMap[e.button];
                 if (btn !== undefined) {
-                    mouseButtons.delete(btn);
+                    mouseStateQueue.push({ type: 'up', button: btn });
                     const rect = canvas.getBoundingClientRect();
                     mouseEventQueue.push({ type: 'up', button: btn, x: e.clientX - rect.left, y: e.clientY - rect.top });
                 }
@@ -117,7 +119,7 @@ window.IntersectInput = (() => {
 
             canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-            // Text input via hidden input or direct key events
+            // Text input via direct key events
             canvas.addEventListener('keypress', (e) => {
                 if (e.key.length === 1) {
                     textInputBuffer.push(e.key);
@@ -128,17 +130,38 @@ window.IntersectInput = (() => {
             canvas.addEventListener('blur', () => {
                 keysDown.clear();
                 mouseButtons.clear();
+                keyStateQueue = [];
+                mouseStateQueue = [];
             });
 
             canvas.focus();
             return true;
         },
 
+        // Called once per frame BEFORE game logic reads input.
+        // 1. Save current state as "previous frame"
+        // 2. Apply queued DOM events to current state
+        // This ensures IsJustPressed (isDown && !wasDown) works correctly.
         update() {
+            // Save current → prev
             keysPrev.clear();
             for (const k of keysDown) keysPrev.add(k);
             mouseButtonsPrev.clear();
             for (const b of mouseButtons) mouseButtonsPrev.add(b);
+
+            // Apply queued key state changes to current
+            for (const evt of keyStateQueue) {
+                if (evt.type === 'down') keysDown.add(evt.key);
+                else keysDown.delete(evt.key);
+            }
+            keyStateQueue = [];
+
+            // Apply queued mouse state changes to current
+            for (const evt of mouseStateQueue) {
+                if (evt.type === 'down') mouseButtons.add(evt.button);
+                else mouseButtons.delete(evt.button);
+            }
+            mouseStateQueue = [];
         },
 
         isKeyDown(key) { return keysDown.has(key); },

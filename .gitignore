@@ -4,6 +4,13 @@
 # Local run scripts
 run-*.sh
 
+# Self-signed certificates (local dev only)
+self-signed.crt
+self-signed.key
+
+# Native binary artifacts
+libe_sqlite3.so
+
 #################
 ## Eclipse
 #################

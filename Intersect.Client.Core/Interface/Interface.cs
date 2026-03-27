@@ -196,10 +196,17 @@ public static partial class Interface
             }
 
             // If the skin texture loads asynchronously (e.g., web client),
-            // recreate the UI once it's ready so controls get correct colors.
+            // flush stale text caches and invalidate all controls so they
+            // re-render with the now-correct skin colors and textures.
             _skin.SkinReady += () =>
             {
-                _initialized = false;
+                Console.WriteLine("[SKIN_READY] Skin texture loaded — flushing text cache and invalidating controls");
+                Graphics.Renderer?.FlushTextCache();
+                _canvasMainMenu?.Invalidate();
+                _canvasMainMenu?.InvalidateChildren(recursive: true);
+                _canvasInGame?.Invalidate();
+                _canvasInGame?.InvalidateChildren(recursive: true);
+                Console.WriteLine($"[SKIN_READY] Done. GameState={Globals.GameState} mainMenu={_canvasMainMenu != null} inGame={_canvasInGame != null}");
             };
         }
 

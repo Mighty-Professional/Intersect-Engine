@@ -1,4 +1,5 @@
 using System.Numerics;
+using Intersect.Client.Core.Controls;
 using Intersect.Client.Framework.GenericClasses;
 using Intersect.Client.Framework.Gwen.Input;
 using Intersect.Client.Framework.Input;
@@ -19,7 +20,7 @@ public class WebInput : GameInput
     public WebInput(IJSInProcessRuntime js) : base(forceGlobal: true)
     {
         _js = js;
-        _controlSet = new WebControlSet();
+        _controlSet = new Controls();
     }
 
     public override IControlSet ControlSet
@@ -103,12 +104,28 @@ public class WebInput : GameInput
         {
             foreach (var evt in keyEvents)
             {
+                var key = (Keys)evt.Key;
                 var inputEvent = evt.Type == "down"
                     ? IntersectInput.InputEvent.KeyDown
                     : IntersectInput.InputEvent.KeyUp;
 
                 Interface.Interface.GwenInput?.ProcessMessage(
-                    new GwenInputMessage(inputEvent, _cachedMousePos, MouseButton.None, (Keys)evt.Key));
+                    new GwenInputMessage(inputEvent, _cachedMousePos, MouseButton.None, key));
+
+                // Fire game-level key handler for key-down events (Enter→chat, Escape→menu, hotkeys, etc.)
+                // This mirrors what MonoInput does for the desktop client.
+                if (evt.Type == "down")
+                {
+                    var modifier = Keys.None;
+                    if (IsKeyDown(Keys.ControlKey) || IsKeyDown(Keys.LControlKey) || IsKeyDown(Keys.RControlKey))
+                        modifier = Keys.Control;
+                    else if (IsKeyDown(Keys.ShiftKey) || IsKeyDown(Keys.LShiftKey) || IsKeyDown(Keys.RShiftKey))
+                        modifier = Keys.Shift;
+                    else if (IsKeyDown(Keys.Menu) || IsKeyDown(Keys.LMenu) || IsKeyDown(Keys.RMenu))
+                        modifier = Keys.Alt;
+
+                    Core.Input.OnKeyPressed(modifier, key);
+                }
             }
         }
 

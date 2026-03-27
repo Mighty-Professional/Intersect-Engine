@@ -79,17 +79,39 @@ public partial class ImagePanel : Base
                 return;
             }
 
+            // Unsubscribe from previous texture's Loaded event
+            if (_texture != null)
+            {
+                _texture.Loaded -= OnAsyncTextureLoaded;
+            }
+
             _texture = value;
             _textureName = Path.GetFileName(_texture?.Name);
             RecomputeTextureSourceBounds();
             if (_texture != null)
             {
+                // If texture dimensions are not yet available (async loading),
+                // subscribe to Loaded event to recompute bounds when ready
+                if (_texture.Width == 0 || _texture.Height == 0)
+                {
+                    _texture.Loaded += OnAsyncTextureLoaded;
+                }
+
                 TextureLoaded?.Invoke(this, EventArgs.Empty);
             }
 
             _ninepatchRenderer = null;
             this.InvalidateParent();
         }
+    }
+
+    private void OnAsyncTextureLoaded(IAsset asset)
+    {
+        // Texture has loaded — recompute source bounds with real dimensions
+        asset.Loaded -= OnAsyncTextureLoaded;
+        RecomputeTextureSourceBounds();
+        _ninepatchRenderer = null;
+        this.InvalidateParent();
     }
 
     private void RecomputeTextureSourceBounds()
@@ -271,6 +293,12 @@ public partial class ImagePanel : Base
             return;
         }
 
+        // Guard against async-loaded textures with 0 dimensions
+        if (_texture.Width <= 0 || _texture.Height <= 0)
+        {
+            return;
+        }
+
         if (x < 0)
         {
             x = 0;
@@ -291,7 +319,11 @@ public partial class ImagePanel : Base
             h = _texture.Height;
         }
 
-        if (x + w > _texture.Width || y + h > _texture.Height)
+        // Clamp to texture bounds instead of silently failing
+        w = Math.Min(w, _texture.Width - x);
+        h = Math.Min(h, _texture.Height - y);
+
+        if (w <= 0 || h <= 0)
         {
             return;
         }

@@ -67,6 +67,17 @@ public partial class WebRenderer : GameRenderer
         _renderFrameNumber++;
         _drawCallsThisFrame = 0;
         _js.InvokeVoid("IntersectWebGL.beginFrame");
+
+        // Log GL error state at frame start for first 30 frames
+        if (_renderFrameNumber <= 30 || _renderFrameNumber % 300 == 0)
+        {
+            var glError = _js.Invoke<int>("IntersectWebGL.getGLError");
+            if (glError != 0)
+            {
+                WebDebugLog.Log("RENDERER", $"[FRAME {_renderFrameNumber}] GL ERROR at frame start: {glError}");
+            }
+        }
+
         return true;
     }
 
@@ -219,14 +230,15 @@ public partial class WebRenderer : GameRenderer
             sy += tex.AtlasReference.Bounds.Y;
         }
 
-        // If drawing TO a render target, bind it and set its projection
+        // If drawing TO a render target, bind it and set its projection.
+        // Begin() returns false if the RT is already bound (e.g., we're inside a cache-to-texture render).
+        bool boundRenderTarget = false;
         if (renderTarget is WebRenderTexture destRt)
         {
             var rtTexId = (int)(destRt.GetTexture() ?? 0);
             if (rtTexId > 0)
             {
-                // Bind framebuffer and set projection for render target dimensions
-                destRt.Begin();
+                boundRenderTarget = destRt.Begin(); // false if already bound
             }
         }
 
@@ -257,10 +269,11 @@ public partial class WebRenderer : GameRenderer
             renderColor.R, renderColor.G, renderColor.B, renderColor.A,
             blendModeInt);
 
-        // Unbind render target after drawing to it
-        if (renderTarget is WebRenderTexture)
+        // Unbind render target only if we actually bound it (skip if already bound by cache-to-texture)
+        if (boundRenderTarget)
         {
-            ((WebRenderTexture)renderTarget).End();
+            ((WebRenderTexture)renderTarget!).End();
+            RestoreView();
         }
     }
 
@@ -377,8 +390,14 @@ public partial class WebRenderer : GameRenderer
 
         // Get texture ID from the active shader's texture
         var textureId = 0;
+        string texName = "(none)";
+        bool texLoaded = false;
         if (ActiveShader?.Texture is WebTexture webTex)
+        {
             textureId = webTex.PlatformTextureId;
+            texName = webTex.Name;
+            texLoaded = webTex.IsLoaded;
+        }
 
         // Determine index type: 0 = ushort, 1 = uint
         var indexType = 0;
@@ -387,10 +406,10 @@ public partial class WebRenderer : GameRenderer
 
         var indexCount = wib?.Count ?? 0;
 
-        // Log ALL tile buffer draws during first in-game frames
+        // Log tile buffer draws during first in-game frames with full texture info
         if (_inGameMode && _inGameFrameCount <= 10)
         {
-            WebDebugLog.Log("RENDERER", $"DrawBuffer: vb={wvb.PlatformBufferId} ib={wib?.PlatformBufferId ?? 0} tex={textureId} indices={indexCount}");
+            WebDebugLog.Log("RENDERER", $"DrawBuffer: vb={wvb.PlatformBufferId} ib={wib?.PlatformBufferId ?? 0} tex={textureId}({texName} loaded={texLoaded}) indices={indexCount}");
         }
 
         _js.InvokeVoid("IntersectWebGL.drawBuffers",
@@ -399,15 +418,33 @@ public partial class WebRenderer : GameRenderer
         _drawCallsThisFrame++;
     }
 
-    public override void Close()
+    /// <summary>
+    /// Flush all cached text textures. Called when the GWEN skin loads asynchronously
+    /// to discard stale text rendered with uninitialized (transparent) colors.
+    /// </summary>
+    public override void RestoreView()
     {
-        WebDebugLog.Log("RENDERER", "Close() called");
-        // Clean up text cache
+        if (_currentView.Width > 0 && _currentView.Height > 0)
+        {
+            _js.InvokeVoid("IntersectWebGL.setView",
+                _currentView.X, _currentView.Y, _currentView.Width, _currentView.Height);
+        }
+    }
+
+    public override void FlushTextCache()
+    {
         foreach (var entry in _textCache)
         {
             _js.InvokeVoid("IntersectWebGL.deleteTexture", entry.Value.textureId);
         }
         _textCache.Clear();
+        WebDebugLog.Log("RENDERER", "Text cache flushed (skin loaded)");
+    }
+
+    public override void Close()
+    {
+        WebDebugLog.Log("RENDERER", "Close() called");
+        FlushTextCache();
     }
 
     public override GameShader LoadShader(string shaderName)

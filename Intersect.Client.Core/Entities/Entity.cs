@@ -1260,12 +1260,14 @@ public partial class Entity : IEntity
             Sprite = sprite;
         }
 
-        if (!AnimatedTextures.TryGetValue(SpriteAnimation, out var texture))
+        if (!AnimatedTextures.TryGetValue(SpriteAnimation, out var texture) ||
+            texture.Width == 0 || texture.Height == 0)
         {
+            // Variant texture missing or not loaded — fall back to base sprite
             texture = Texture;
         }
 
-        if (texture == default)
+        if (texture == default || texture.Width == 0 || texture.Height == 0)
         {
             // We don't have a texture to render, but we still want this to be targetable.
             WorldPos = new FloatRect(
@@ -1484,22 +1486,26 @@ public partial class Entity : IEntity
         if (SpriteAnimation is SpriteAnimations.Attack or
             SpriteAnimations.Cast or SpriteAnimations.Weapon or SpriteAnimations.Shoot)
         {
-            // Extract animation name from the AnimatedTextures list.
-            var animationName = Path.GetFileNameWithoutExtension(AnimatedTextures[SpriteAnimation].Name);
-
-            // Extract the substring after the separator.
-            var separatorIndex = animationName.IndexOf('_') + 1;
-            var customAnimationName = animationName[separatorIndex..];
-
-            // Try to get custom paperdoll texture.
-            var customPaperdollTex =
-                Globals.ContentManager.GetTexture(TextureType.Paperdoll,
-                    $"{filenameNoExt}_{customAnimationName}.png");
-
-            // If custom paperdoll texture exists, use it.
-            if (customPaperdollTex != null)
+            if (AnimatedTextures.TryGetValue(SpriteAnimation, out var animTex) &&
+                animTex.Width > 0 && animTex.Height > 0)
             {
-                paperdollTex = customPaperdollTex;
+                // Extract animation name from the AnimatedTextures list.
+                var animationName = Path.GetFileNameWithoutExtension(animTex.Name);
+
+                // Extract the substring after the separator.
+                var separatorIndex = animationName.IndexOf('_') + 1;
+                var customAnimationName = animationName[separatorIndex..];
+
+                // Try to get custom paperdoll texture.
+                var customPaperdollTex =
+                    Globals.ContentManager.GetTexture(TextureType.Paperdoll,
+                        $"{filenameNoExt}_{customAnimationName}.png");
+
+                // If custom paperdoll texture exists, use it.
+                if (customPaperdollTex != null)
+                {
+                    paperdollTex = customPaperdollTex;
+                }
             }
         }
 
@@ -2344,7 +2350,7 @@ public partial class Entity : IEntity
         }
 
         texture = Globals.ContentManager.GetTexture(TextureType.Entity, $"{animationTextureName}{extension}");
-        return texture != default;
+        return texture != default && texture.Width > 0 && texture.Height > 0;
     }
 
     /// <summary>

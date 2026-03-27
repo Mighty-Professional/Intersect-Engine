@@ -392,24 +392,9 @@ window.IntersectWebGL = (() => {
 
         setView(x, y, width, height) {
             flushBatch();
-            // Save for restoreView after framebuffer render
-            this._lastViewX = x;
-            this._lastViewY = y;
-            this._lastViewW = width;
-            this._lastViewH = height;
             ortho4x4(viewMatrix, x, x + width, y + height, y, -1, 1);
             const loc = gl.getUniformLocation(currentProgram, 'u_projection');
             gl.uniformMatrix4fv(loc, false, viewMatrix);
-        },
-
-        // Restore the last setView projection (after framebuffer rendering)
-        restoreView() {
-            if (this._lastViewW > 0) {
-                flushBatch();
-                ortho4x4(viewMatrix, this._lastViewX, this._lastViewX + this._lastViewW, this._lastViewY + this._lastViewH, this._lastViewY, -1, 1);
-                const loc = gl.getUniformLocation(currentProgram, 'u_projection');
-                gl.uniformMatrix4fv(loc, false, viewMatrix);
-            }
         },
 
         setViewport(x, y, w, h) {
@@ -884,6 +869,10 @@ window.IntersectWebGL = (() => {
         // Used by the C# frame loop to sync with the browser's display cycle.
         // Without this, Task.Delay(1) fires before compositing and the canvas
         // is cleared before the browser ever displays the rendered frame.
+        getGLError() {
+            return gl.getError();
+        },
+
         waitForNextFrame() {
             return new Promise(resolve => requestAnimationFrame(resolve));
         },

@@ -1,4 +1,5 @@
 using Intersect.Client.Framework.Database;
+using Intersect.Configuration;
 using Microsoft.JSInterop;
 
 namespace Intersect.Client.Web.Database;
@@ -39,7 +40,27 @@ public class WebDatabase : GameDatabase
 
     public override bool LoadConfig()
     {
-        // Web client loads config from server or defaults
+        // Try to load client config from a JSON file served alongside the web client.
+        // Falls back to reading query parameters for host/port override.
+        try
+        {
+            var json = _js.Invoke<string?>("IntersectWebContent.fetchTextSync",
+                "client-config.json");
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                var cfg = Newtonsoft.Json.JsonConvert.DeserializeObject<ClientConfiguration>(json);
+                if (cfg != null)
+                {
+                    ClientConfiguration.Instance.Host = cfg.Host;
+                    ClientConfiguration.Instance.Port = cfg.Port;
+                }
+            }
+        }
+        catch
+        {
+            // Config file not found or parse error — use defaults
+        }
+
         return true;
     }
 }

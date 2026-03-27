@@ -685,18 +685,15 @@ internal partial class ApiService : ApplicationService<ServerContext, IApiServic
         app.UseMiddleware<WebSocketMiddleware>();
 
         // Serve game client resources (textures, audio, fonts) at /resources
-        // CORS headers are added via OnPrepareResponse because the CORS middleware
-        // only applies to routed endpoints, not static files.
+        // Uses case-insensitive file provider for Linux compatibility — game asset
+        // names from the server database may not match the exact file casing on disk.
         var resourcesPath = Path.Combine(builder.Environment.ContentRootPath, "resources");
         if (Directory.Exists(resourcesPath))
         {
             app.UseStaticFiles(
                 new StaticFileOptions
                 {
-                    FileProvider = new PhysicalFileProvider(
-                        resourcesPath,
-                        ExclusionFilters.Sensitive
-                    ),
+                    FileProvider = new Middleware.CaseInsensitiveFileProvider(resourcesPath),
                     HttpsCompression = HttpsCompressionMode.Compress,
                     RequestPath = "/resources",
                     ServeUnknownFileTypes = true,

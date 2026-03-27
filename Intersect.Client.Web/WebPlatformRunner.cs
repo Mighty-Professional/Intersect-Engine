@@ -68,6 +68,10 @@ public class WebPlatformRunner : IPlatformRunner
         Core.Graphics.Renderer = renderer;
         WebDebugLog.Log("INIT", "Globals wired up");
 
+        // Load client config (host/port) from client-config.json served alongside the web client.
+        // This must happen before the asset URL is set, since the asset URL depends on host/port.
+        database.LoadConfig();
+
         // Set asset base URL to the game server's HTTP endpoint.
         // The web client may be served from a different origin (e.g. Blazor dev server on :5000)
         // but resources are served by the game server (e.g. :5400).

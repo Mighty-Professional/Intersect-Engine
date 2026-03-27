@@ -2035,7 +2035,7 @@ public partial class Base : IDisposable
     ///     Invalidates the control's children (relayout/repaint).
     /// </summary>
     /// <param name="recursive">Determines whether the operation should be carried recursively.</param>
-    protected virtual void InvalidateChildren(bool recursive = false)
+    public virtual void InvalidateChildren(bool recursive = false)
     {
         RunOnMainThread(InvalidateChildren, this, recursive);
 

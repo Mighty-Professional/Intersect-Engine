@@ -18,6 +18,7 @@ public class WebRenderTexture : IGameRenderTexture
     private readonly int _width;
     private readonly int _height;
     private bool _disposed;
+    private bool _isBound;
 
     public WebRenderTexture(IJSInProcessRuntime js, int width, int height)
     {
@@ -58,11 +59,14 @@ public class WebRenderTexture : IGameRenderTexture
         return string.Compare(Name, other.ToString(), StringComparison.Ordinal);
     }
 
+    /// <summary>Whether this render target's framebuffer is currently bound.</summary>
+    public bool IsBound => _isBound;
+
     public bool Begin()
     {
+        if (_isBound) return false; // Already bound (e.g., GWEN cache RT re-entered by DrawTexture)
+        _isBound = true;
         _js.InvokeVoid("IntersectWebGL.bindFramebuffer", _framebufferId);
-        // Set viewport and projection to match framebuffer dimensions
-        // Otherwise content renders with the world-coordinate projection
         _js.InvokeVoid("IntersectWebGL.setViewport", 0, 0, _width, _height);
         _js.InvokeVoid("IntersectWebGL.setView", 0, 0, _width, _height);
         return true;
@@ -76,10 +80,10 @@ public class WebRenderTexture : IGameRenderTexture
 
     public void End()
     {
+        if (!_isBound) return; // Not bound, nothing to do
+        _isBound = false;
         _js.InvokeVoid("IntersectWebGL.bindFramebuffer", 0);
-        // Restore screen viewport and projection
         _js.InvokeVoid("IntersectWebGL.restoreViewport");
-        _js.InvokeVoid("IntersectWebGL.restoreView");
     }
 
     public bool Unload()

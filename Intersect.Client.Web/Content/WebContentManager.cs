@@ -94,6 +94,8 @@ public class WebContentManager : GameContentManager
     /// <summary>
     /// Override GetTexture to load textures on-demand via HTTP.
     /// First checks the cache dictionary, then creates and caches a new WebTexture.
+    /// Critical textures (like the GWEN skin) are loaded synchronously so pixel data
+    /// is available immediately for skin color initialization.
     /// </summary>
     public override IGameTexture? GetTexture(TextureType type, string name)
     {
@@ -167,8 +169,12 @@ public class WebContentManager : GameContentManager
             if (mTilesetDict.ContainsKey(key)) continue;
 
             var url = $"{_assetBaseUrl}/tilesets/{name}";
+            WebDebugLog.Log("TILESET", $"Loading: '{name}' url={url}");
             var texture = new WebTexture(_js, name, url);
             mTilesetDict[key] = texture;
+            // Log when each tileset finishes loading
+            var tilesetName = name;
+            texture.Loaded += _ => WebDebugLog.Log("TILESET", $"LOADED OK: '{tilesetName}' id={texture.PlatformTextureId} {texture.Width}x{texture.Height}");
             _ = texture.LoadFromUrlAsync(url);
         }
 

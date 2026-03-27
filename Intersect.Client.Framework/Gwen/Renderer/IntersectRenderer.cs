@@ -378,16 +378,32 @@ public partial class IntersectRenderer : Base, ICacheToTexture
     /// Called to set the target up for rendering.
     /// </summary>
     /// <param name="control">Control to be rendered.</param>
+    // Cache-to-texture debug logging
+    private static int _cttLogCount;
+    private const int CttLogMax = 200; // Log first N operations then stop
+    private static void CttLog(string msg)
+    {
+        if (_cttLogCount < CttLogMax)
+        {
+            _cttLogCount++;
+            Console.WriteLine($"[CTT] {msg}");
+        }
+    }
+
     public void SetupCacheTexture(Control.Base control)
     {
         m_RealRT = mRenderTarget;
         m_Stack.Push(mRenderTarget); // save current RT
-        if (!m_RT.ContainsKey(control))
+        if (!m_RT.TryGetValue(control, out var cacheRt))
         {
-            var keys = m_RT.Keys.Select(key => key.ParentQualifiedName);
-            ApplicationContext.Context.Value?.Logger.LogError($"{control.ParentQualifiedName} not found in the list of render targets: {string.Join(", ", keys)}");
+            var w = Math.Max(1, control.Width);
+            var h = Math.Max(1, control.Height);
+            CttLog($"SetupCacheTexture: Creating RT on-demand for '{control.ParentQualifiedName}' {w}x{h}");
+            cacheRt = mRenderer.CreateRenderTexture(w, h);
+            m_RT[control] = cacheRt;
         }
-        mRenderTarget = m_RT[control]; // make cache current RT
+        mRenderTarget = cacheRt;
+        CttLog($"SetupCacheTexture: '{control.ParentQualifiedName}' RT={cacheRt.Width}x{cacheRt.Height} ctrl={control.Width}x{control.Height} stackDepth={m_Stack.Count}");
         mRenderTarget.Begin();
         mRenderTarget.Clear(Color.Transparent);
     }
@@ -398,8 +414,12 @@ public partial class IntersectRenderer : Base, ICacheToTexture
     /// <param name="control">Control to be rendered.</param>
     public void FinishCacheTexture(Control.Base control)
     {
+        CttLog($"FinishCacheTexture: '{control.ParentQualifiedName}' stackDepth={m_Stack.Count}");
         mRenderTarget.End();
         mRenderTarget = m_Stack.Pop();
+        // Restore the world view after framebuffer rendering changed it.
+        // End() only restores the viewport, not the projection/view.
+        mRenderer.RestoreView();
     }
 
     /// <summary>
@@ -408,15 +428,18 @@ public partial class IntersectRenderer : Base, ICacheToTexture
     /// <param name="control">Control to be rendered.</param>
     public void DrawCachedControlTexture(Control.Base control)
     {
-        var ri = m_RT[control];
+        if (!m_RT.TryGetValue(control, out var ri))
+        {
+            CttLog($"DrawCachedControlTexture: '{control.ParentQualifiedName}' NO RT — skipping");
+            return;
+        }
 
-        //ri.Display();
+        CttLog($"DrawCachedControlTexture: '{control.ParentQualifiedName}' RT={ri.Width}x{ri.Height} bounds=({control.Bounds.X},{control.Bounds.Y},{control.Bounds.Width},{control.Bounds.Height}) mRenderTarget={(mRenderTarget == null ? "null" : "RT")}");
         var rt = mRenderTarget;
         mRenderTarget = m_RealRT;
         mColor = Color.White;
         DrawTexturedRect(ri, control.Bounds, Color.White);
 
-        //DrawMissingImage(control.Bounds);
         mRenderTarget = rt;
     }
 
@@ -426,14 +449,32 @@ public partial class IntersectRenderer : Base, ICacheToTexture
     /// <param name="control">Control to be rendered.</param>
     public void CreateControlCacheTexture(Control.Base control)
     {
-        // initialize cache RT
-        if (!m_RT.ContainsKey(control))
+        if (m_RT.TryGetValue(control, out var existing))
         {
+            // Recreate if the control has been resized since the cache was created
+            if (existing.Width != control.Width || existing.Height != control.Height)
+            {
+                CttLog($"CreateControlCacheTexture: RESIZE '{control.ParentQualifiedName}' old={existing.Width}x{existing.Height} new={control.Width}x{control.Height}");
+                existing.Dispose();
+                m_RT.Remove(control);
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        // Create new cache RT matching current control dimensions
+        if (control.Width > 0 && control.Height > 0)
+        {
+            CttLog($"CreateControlCacheTexture: CREATE '{control.ParentQualifiedName}' {control.Width}x{control.Height}");
             m_RT[control] = mRenderer.CreateRenderTexture(control.Width, control.Height);
             m_RT[control].Clear(Color.Transparent);
         }
-
-        var ri = m_RT[control];
+        else
+        {
+            CttLog($"CreateControlCacheTexture: SKIP '{control.ParentQualifiedName}' — zero size {control.Width}x{control.Height}");
+        }
     }
 
     public void DisposeCachedTexture(Control.Base control)

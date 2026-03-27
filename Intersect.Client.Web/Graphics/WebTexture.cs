@@ -21,6 +21,7 @@ public class WebTexture : IGameTexture
     private int _height;
     private bool _loaded;
     private bool _disposed;
+    private bool _loadInProgress;
 
     public int PlatformTextureId => _platformTextureId;
 
@@ -114,6 +115,12 @@ public class WebTexture : IGameTexture
             return;
         }
 
+        // Don't start a second async load if one is already in progress
+        if (_loadInProgress)
+        {
+            return;
+        }
+
         if (!string.IsNullOrEmpty(_url))
         {
             _ = LoadFromUrlAsync(_url);
@@ -142,6 +149,8 @@ public class WebTexture : IGameTexture
 
     internal async Task LoadFromUrlAsync(string url)
     {
+        if (_loadInProgress) return;
+        _loadInProgress = true;
         WebDebugLog.Log("TEXTURE", $"LoadAsync start: {Name} url={url}");
         try
         {
@@ -151,17 +160,27 @@ public class WebTexture : IGameTexture
             _width = result.Width;
             _height = result.Height;
             _loaded = true;
-            WebDebugLog.Log("TEXTURE", $"LoadAsync OK: {Name} id={_platformTextureId} {_width}x{_height}");
-            Loaded?.Invoke(this);
+            WebDebugLog.Log("TEXTURE", $"LoadAsync OK: {Name} id={_platformTextureId} {_width}x{_height} subscribers={Loaded?.GetInvocationList()?.Length ?? 0}");
+            try
+            {
+                Loaded?.Invoke(this);
+            }
+            catch (Exception loadedEx)
+            {
+                WebDebugLog.Warn("TEXTURE", $"LoadAsync Loaded event EXCEPTION for {Name}: {loadedEx}");
+            }
         }
         catch (JSException ex)
         {
-            // Missing textures are expected (e.g. animation variants like _weapon, _shoot)
             WebDebugLog.Log("TEXTURE", $"LoadAsync 404/fail: {Name} ({ex.Message})");
         }
         catch (Exception ex)
         {
             WebDebugLog.Warn("TEXTURE", $"LoadAsync error: {Name} {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            _loadInProgress = false;
         }
     }
 
